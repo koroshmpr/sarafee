@@ -1,0 +1,1031 @@
+<?php
+if ( ! defined( 'ABSPATH' ) ) exit;
+
+/**
+ * [exchange_archive rate_page="/best-rate/"]
+ *
+ * Featured cities come from ACF Options → showing_cities (taxonomy field).
+ * Override with featured_cities shortcode attribute if needed.
+ *
+ * Attributes:
+ *   featured_cities — comma-separated slugs (overrides options page).
+ *   rate_page       — URL for the استعلام نرخ popup button.
+ *   per_page        — max exchanges to load (default 50).
+ *   title_tag       — heading element override.
+ *   title           — 'true'|'false'|'' (auto: show only on tax archive).
+ */
+function exchange_archive_shortcode( $atts ) {
+    $atts = shortcode_atts( [
+        'featured_cities' => '',
+        'rate_page'       => '',
+        'per_page'        => 50,
+        'title_tag'       => '',
+        'title'           => '',
+    ], $atts );
+
+    static $instance = 0;
+    $instance++;
+    $uid = 'ea' . $instance;
+
+    // ── Current city ──────────────────────────────────────────────────────
+    $is_tax_archive = is_tax( 'city' );
+
+    if ( $is_tax_archive ) {
+        $current_term = get_queried_object();
+    } else {
+        $city_slug    = isset( $_GET['city'] ) ? sanitize_text_field( wp_unslash( $_GET['city'] ) ) : '';
+        $current_term = $city_slug ? get_term_by( 'slug', $city_slug, 'city' ) : null;
+    }
+
+    // ── Featured cities ───────────────────────────────────────────────────
+    // Priority: 1) shortcode attr  2) ACF options page  3) top-5 by count
+    if ( $atts['featured_cities'] ) {
+        $featured_slugs = array_filter( array_map( 'trim', explode( ',', $atts['featured_cities'] ) ) );
+        $featured_terms = [];
+        foreach ( $featured_slugs as $slug ) {
+            $t = get_term_by( 'slug', $slug, 'city' );
+            if ( $t && ! is_wp_error( $t ) ) {
+                $featured_terms[] = $t;
+            }
+        }
+    } else {
+        $featured_terms = [];
+        $option_cities  = function_exists( 'get_field' ) ? get_field( 'showing_cities', 'option' ) : null;
+        if ( ! empty( $option_cities ) && is_array( $option_cities ) ) {
+            foreach ( $option_cities as $city ) {
+                if ( $city instanceof WP_Term ) {
+                    $featured_terms[] = $city;
+                } elseif ( is_numeric( $city ) ) {
+                    $t = get_term( (int) $city, 'city' );
+                    if ( $t && ! is_wp_error( $t ) ) {
+                        $featured_terms[] = $t;
+                    }
+                }
+            }
+        }
+        if ( empty( $featured_terms ) ) {
+            $featured_terms = get_terms( [
+                'taxonomy'   => 'city',
+                'hide_empty' => true,
+                'orderby'    => 'count',
+                'order'      => 'DESC',
+                'number'     => 5,
+            ] );
+            if ( is_wp_error( $featured_terms ) ) {
+                $featured_terms = [];
+            }
+        }
+    }
+
+    if ( ! $current_term && ! empty( $featured_terms ) ) {
+        $current_term = $featured_terms[0];
+    }
+
+    // ── All cities for the search dropdown ────────────────────────────────
+    // hide_empty=false so every city is searchable regardless of post count.
+    // Featured cities appear first in the list, rest sorted alphabetically.
+    $featured_ids = array_column( (array) $featured_terms, 'term_id' );
+    $all_cities   = get_terms( [
+        'taxonomy'   => 'city',
+        'hide_empty' => false,
+        'orderby'    => 'name',
+    ] );
+    if ( is_wp_error( $all_cities ) ) {
+        $all_cities = [];
+    }
+    // Put featured terms at top, then the rest alphabetically
+    $non_featured = array_filter( $all_cities, function ( $t ) use ( $featured_ids ) {
+        return ! in_array( $t->term_id, $featured_ids, true );
+    } );
+    $search_terms = array_merge( (array) $featured_terms, array_values( $non_featured ) );
+
+    // ── Exchange query ────────────────────────────────────────────────────
+    $query_args = [
+        'post_type'      => 'exchange',
+        'posts_per_page' => intval( $atts['per_page'] ),
+        'orderby'        => 'date',
+        'order'          => 'DESC',
+        'no_found_rows'  => true,
+    ];
+    if ( $current_term ) {
+        $query_args['tax_query'] = [ [
+            'taxonomy' => 'city',
+            'field'    => 'term_id',
+            'terms'    => $current_term->term_id,
+        ] ];
+    }
+    $loop  = new WP_Query( $query_args );
+    $posts = $loop->posts;
+
+    $rank_map = [];
+    foreach ( $posts as $_p ) {
+        $rank_map[ $_p->ID ] = (int) get_field( 'rank', $_p->ID );
+    }
+    usort( $posts, function ( $a, $b ) use ( $rank_map ) {
+        $ra = $rank_map[ $a->ID ];
+        $rb = $rank_map[ $b->ID ];
+        if ( $ra > 0 && $rb > 0 ) return $ra - $rb;
+        if ( $ra > 0 ) return -1;
+        if ( $rb > 0 ) return  1;
+        return 0;
+    } );
+
+    // ── Collect unique areas for the filter panel ─────────────────────────
+    $areas = [];
+    foreach ( $posts as $_p ) {
+        $a = get_field( 'area', $_p->ID );
+        if ( $a && ! in_array( $a, $areas, true ) ) {
+            $areas[] = $a;
+        }
+    }
+    sort( $areas );
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    $title_tag  = $atts['title_tag'] ?: ( $is_tax_archive ? 'h1' : 'h2' );
+    $show_title = $atts['title'] === 'true'  ? true
+                : ( $atts['title'] === 'false' ? false
+                : $is_tax_archive );
+
+    $base_url = strtok( home_url( $_SERVER['REQUEST_URI'] ?? '/' ), '?' );
+    $city_url = function ( $term ) use ( $is_tax_archive, $base_url ) {
+        return $is_tax_archive
+            ? esc_url( get_term_link( $term ) )
+            : esc_url( add_query_arg( 'city', $term->slug, $base_url ) );
+    };
+
+    ob_start();
+    ?>
+    <section class="ea" dir="rtl"
+             aria-label="<?php echo $current_term ? esc_attr( 'صرافی‌های ' . $current_term->name ) : 'لیست صرافی‌ها'; ?>">
+
+        <?php if ( $show_title && $current_term ) : ?>
+        <<?php echo esc_attr( $title_tag ); ?> class="ea__title">
+            صرافی‌های <?php echo esc_html( $current_term->name ); ?>
+        </<?php echo esc_attr( $title_tag ); ?>>
+        <?php endif; ?>
+
+        <!-- ── Filter bar ── -->
+        <?php if ( ! empty( $featured_terms ) ) : ?>
+        <div class="ea__filter-wrap" id="<?php echo esc_attr( $uid ); ?>Wrap">
+
+            <div class="ea__filter-bar">
+
+                <!-- Scrollable city pills (right side in RTL) -->
+                <div class="ea__pills-scroll">
+                    <nav class="ea__filters" role="tablist" aria-label="فیلتر شهر">
+                        <?php foreach ( $featured_terms as $term ) :
+                            $active = $current_term && $current_term->term_id === $term->term_id;
+                        ?>
+                        <a href="<?php echo $city_url( $term ); ?>"
+                           class="ea__pill<?php echo $active ? ' ea__pill--active' : ''; ?>"
+                           role="tab"
+                           aria-selected="<?php echo $active ? 'true' : 'false'; ?>"
+                           aria-label="<?php echo esc_attr( 'نمایش صرافی‌های ' . $term->name ); ?>">
+                            <?php echo esc_html( $term->name ); ?>
+                        </a>
+                        <?php endforeach; ?>
+                    </nav>
+                </div>
+
+                <!-- Action buttons (left side in RTL) -->
+                <div class="ea__bar-actions">
+                    <button type="button"
+                            class="ea__bar-btn"
+                            id="<?php echo esc_attr( $uid ); ?>SearchBtn"
+                            aria-label="جستجوی شهر"
+                            aria-expanded="false">
+                        <i class="fas fa-search" aria-hidden="true"></i>
+                        <span>جستجو</span>
+                    </button>
+
+                    <button type="button"
+                            class="ea__bar-btn ea__bar-btn--icon"
+                            id="<?php echo esc_attr( $uid ); ?>FilterBtn"
+                            aria-label="فیلتر"
+                            aria-expanded="false">
+                        <i class="fas fa-sliders-h" aria-hidden="true"></i>
+                        <span class="ea__filter-badge"
+                              id="<?php echo esc_attr( $uid ); ?>FilterBadge"
+                              hidden>0</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── Search dropdown (absolute) ── -->
+            <div class="ea__drop ea__drop--search"
+                 id="<?php echo esc_attr( $uid ); ?>SearchDrop"
+                 role="dialog"
+                 aria-label="جستجوی شهر"
+                 hidden>
+                <div class="ea__search-row">
+                    <i class="fas fa-search" aria-hidden="true"></i>
+                    <input type="search"
+                           id="<?php echo esc_attr( $uid ); ?>SearchInput"
+                           placeholder="نام شهر را وارد کنید…"
+                           autocomplete="off"
+                           aria-label="جستجوی شهر"
+                           aria-autocomplete="list"
+                           aria-controls="<?php echo esc_attr( $uid ); ?>SearchList">
+                    <button type="button"
+                            class="ea__drop-close"
+                            id="<?php echo esc_attr( $uid ); ?>SearchClose"
+                            aria-label="بستن">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <ul class="ea__search-list"
+                    id="<?php echo esc_attr( $uid ); ?>SearchList"
+                    role="listbox"
+                    aria-label="شهرها">
+                    <?php
+                    foreach ( $search_terms as $t ) :
+                        $active = $current_term && $current_term->term_id === $t->term_id;
+                    ?>
+                    <li class="ea__search-item"
+                        data-name="<?php echo esc_attr( $t->name ); ?>"
+                        role="option"
+                        aria-selected="<?php echo $active ? 'true' : 'false'; ?>">
+                        <a href="<?php echo $city_url( $t ); ?>"
+                           class="<?php echo $active ? 'is-active' : ''; ?>"
+                           aria-label="<?php echo esc_attr( 'نمایش صرافی‌های ' . $t->name ); ?>">
+                            <?php echo esc_html( $t->name ); ?>
+                            <?php if ( $active ) : ?>
+                            <i class="fas fa-check" aria-hidden="true"></i>
+                            <?php endif; ?>
+                        </a>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+
+            <!-- ── Filter dropdown (absolute) ── -->
+            <div class="ea__drop ea__drop--filter"
+                 id="<?php echo esc_attr( $uid ); ?>FilterDrop"
+                 role="dialog"
+                 aria-label="فیلترها"
+                 hidden>
+               <div class="filter-header">
+                 <p class="ea__drop-title">فیلتر کردن</p>
+                 <button type="button"
+                        class="ea__filter-reset"
+                        id="<?php echo esc_attr( $uid ); ?>FilterReset">
+                    پاک کردن 
+                </button>
+               </div>
+                <div class="ea__filter-chips" id="<?php echo esc_attr( $uid ); ?>Chips">
+                    <button type="button" class="ea__chip" data-filter="verified" aria-pressed="false">
+                        <i class="fas fa-check-circle" aria-hidden="true"></i>
+                        مجاز
+                    </button>
+                    <button type="button" class="ea__chip" data-filter="digital" aria-pressed="false">
+                        <i class="fas fa-coins" aria-hidden="true"></i>
+                        ارز دیجیتال
+                    </button>
+                    <button type="button" class="ea__chip" data-filter="rated" aria-pressed="false">
+                        <i class="fas fa-star" aria-hidden="true"></i>
+                        دارای امتیاز
+                    </button>
+                </div>
+                <?php if ( ! empty( $areas ) ) : ?>
+                <div class="ea__filter-section">
+                    <p class="ea__filter-section-label">منطقه / محله</p>
+                    <div class="ea__area-search-row">
+                        <i class="fas fa-map-marker-alt" aria-hidden="true"></i>
+                        <input type="search"
+                               id="<?php echo esc_attr( $uid ); ?>AreaSearch"
+                               class="ea__area-search"
+                               placeholder="جستجوی منطقه…"
+                               autocomplete="off"
+                               aria-label="جستجوی منطقه">
+                    </div>
+                    <div class="ea__area-list" id="<?php echo esc_attr( $uid ); ?>AreaList">
+                        <?php foreach ( $areas as $area_opt ) : ?>
+                        <button type="button"
+                                class="ea__chip ea__chip--area"
+                                data-area="<?php echo esc_attr( $area_opt ); ?>"
+                                aria-pressed="false">
+                            <?php echo esc_html( $area_opt ); ?>
+                        </button>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+            
+            </div>
+
+        </div><!-- .ea__filter-wrap -->
+        <?php endif; ?>
+
+        <!-- ── Exchange list ── -->
+        <ul class="ea__list" role="list" id="<?php echo esc_attr( $uid ); ?>List">
+        <?php
+        $counter = 0;
+        if ( ! empty( $posts ) ) :
+            global $post;
+            foreach ( $posts as $post ) :
+                setup_postdata( $post );
+                $counter++;
+                $rank             = $rank_map[ $post->ID ] ?: $counter;
+                $is_top3          = $counter <= 3;
+                $rating           = get_post_meta( $post->ID, '_kksr_avg', true );
+                $area             = get_field( 'area' );
+                $verified         = get_field( 'verified' );
+                $digital_currency = get_field( 'digital_currency' );
+                $post_title       = get_the_title();
+                $permalink        = get_permalink();
+                $logo             = get_the_post_thumbnail_url( $post->ID, 'thumbnail' );
+                $is_first         = ( $counter === 1 );
+        ?>
+            <li class="ea__item"
+                data-verified="<?php echo $verified         ? '1' : '0'; ?>"
+                data-digital="<?php echo $digital_currency ? '1' : '0'; ?>"
+                data-rated="<?php echo $rating             ? '1' : '0'; ?>"
+                data-area="<?php echo esc_attr( (string) $area ); ?>">
+
+                <a class="ea__item-link"
+                   href="<?php echo esc_url( $permalink ); ?>"
+                   tabindex="-1"></a>
+
+                <div class="ea__item-left">
+                    <span class="ea__rank<?php echo $is_top3 ? ' ea__rank--top3' : ''; ?>"
+                          aria-label="رتبه <?php echo esc_attr( $rank ); ?>">
+                        <?php echo esc_html( $rank ); ?>
+                    </span>
+                    <div class="ea__logo" role="img" aria-label="لوگو <?php echo esc_attr( $post_title ); ?>">
+                        <?php if ( $logo ) : ?>
+                        <img src="<?php echo esc_url( $logo ); ?>"
+                             alt=""
+                             width="50" height="50"
+                             decoding="async"
+                             <?php echo $is_first ? 'fetchpriority="high"' : 'loading="lazy"'; ?>>
+                        <?php else : ?>
+                        <i class="fas fa-building" aria-hidden="true"></i>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="ea__info">
+                    <p class="ea__name">
+                        <a href="<?php echo esc_url( $permalink ); ?>"
+                           aria-label="<?php echo esc_attr( 'مشاهده صرافی ' . $post_title ); ?>">
+                            <?php echo esc_html( $post_title ); ?>
+                        </a>
+                        <?php if ( $rating ) : ?>
+                        <span class="ea__rating"
+                              aria-label="<?php echo esc_attr( 'امتیاز ' . number_format( (float) $rating, 1 ) . ' از ۵' ); ?>">
+                            <i class="fas fa-star" aria-hidden="true"></i>
+                            <span><?php echo esc_html( number_format( (float) $rating, 1 ) ); ?></span>
+                        </span>
+                        <?php endif; ?>
+                    </p>
+                    <?php if ( $area ) : ?>
+                    <p class="ea__area"><?php echo esc_html( $area ); ?></p>
+                    <?php endif; ?>
+                </div>
+
+                <button type="button"
+                        class="ea__rate-btn openPorsline"
+                        aria-label="<?php echo esc_attr( 'استعلام نرخ از ' . $post_title ); ?>"
+                        data-exchange-id="<?php echo esc_attr( get_the_ID() ); ?>"
+                        data-exchange-name="<?php echo esc_attr( $post_title ); ?>"
+                        data-exchange-url="<?php echo esc_attr( $permalink ); ?>">
+                    استعلام نرخ
+                </button>
+
+            </li>
+        <?php endforeach; wp_reset_postdata();
+        else : ?>
+            <li class="ea__empty" role="status">صرافی‌ای برای این شهر یافت نشد.</li>
+        <?php endif; ?>
+        </ul>
+
+        <!-- Empty-after-filter message (hidden by default) -->
+        <p class="ea__filter-empty" id="<?php echo esc_attr( $uid ); ?>FilterEmpty" hidden>
+            هیچ صرافی با این فیلترها یافت نشد.
+        </p>
+
+    </section>
+
+    <?php
+    static $assets_done = false;
+    if ( ! $assets_done ) :
+        $assets_done = true;
+    ?>
+    <style>
+    /* ── Base ───────────────────────────────────────────── */
+    .ea { direction: rtl; text-align: right; }
+    .ea *, .ea *::before, .ea *::after { box-sizing: border-box; }
+
+    /* ── Title ──────────────────────────────────────────── */
+    .ea__title {
+        font-size: 22px;
+        font-weight: 800;
+        color: #1a1a1a;
+        text-align: center;
+        margin: 0 0 20px;
+        padding: 0;
+        line-height: 1.3;
+    }
+
+    /* ── Filter bar wrapper ─────────────────────────────── */
+    .filter-header {
+        display: flex;
+        align-items:center;
+        justify-content:space-between;
+    }
+    .ea__filter-wrap {
+        position: relative;
+        margin-bottom: 16px;
+    }
+
+    .ea__filter-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #f7f7f76b;
+        border: 1px solid #ebebeb;
+        border-radius: 999px;
+        padding: 5px 5px 5px 8px; /* RTL: more padding on left (action buttons side) */
+    }
+
+    /* Scrollable pills region */
+    .ea__pills-scroll {
+        flex: 1;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    .ea__pills-scroll::-webkit-scrollbar { display: none; }
+
+    .ea__filters {
+        display: flex;
+        gap: 6px;
+        padding: 2px 0;
+        width: max-content;
+    }
+
+    .ea__pill {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        padding: 7px 16px;
+        border-radius: 999px;
+        border: none;
+        background: transparent;
+        color: #555;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: background .15s, color .15s;
+        font-family: inherit;
+        line-height: 1;
+    }
+    .ea__pill:hover         { background: #ebebeb; color: #1a1a1a; text-decoration: none; }
+    .ea__pill--active       { background: #0f1d3a; color: #fff; border-radius: 999px; }
+    .ea__pill--active:hover { background: #1a2f56; color: #fff; }
+
+    /* Action buttons */
+    .ea__bar-actions {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+    }
+    .ea__bar-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 7px 12px;
+        border-radius: 999px;
+        border: none;
+        background: #fff;
+        color: #333;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background .15s, color .15s;
+        white-space: nowrap;
+        box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    .ea__bar-btn:hover { background: #f0f0f0; }
+    .ea__bar-btn--icon { padding: 7px 10px; position: relative; }
+    .ea__bar-btn i     { font-size: 13px; }
+
+    .ea__filter-badge {
+        position: absolute;
+        top: -4px;
+        left: -4px;
+        min-width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: #e74c3c;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 4px;
+        line-height: 1;
+    }
+    .ea__filter-badge[hidden] { display: none; }
+
+    /* ── Shared dropdown styles ─────────────────────────── */
+    .ea__drop {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        left: 0;
+        z-index: 200;
+        background: #fff;
+        border: 1px solid #e8e8e8;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.1);
+        padding: 14px;
+        opacity: 0;
+        transform: translateY(-8px);
+        transition: opacity .2s ease, transform .2s ease;
+        pointer-events: none;
+    }
+    .ea__drop[hidden] { display: none; }
+    .ea__drop.is-open {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+    .ea__drop-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #888;
+        margin: 0 0 10px;
+        padding: 0;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+    .ea__drop-close {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #bbb;
+        font-size: 15px;
+        display: flex;
+        align-items: center;
+        padding: 0;
+        flex-shrink: 0;
+        transition: color .15s;
+    }
+    .ea__drop-close:hover { color: #555; }
+
+    /* ── Search dropdown ────────────────────────────────── */
+    .ea__search-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 9px 12px;
+        margin-bottom: 10px;
+        background: #fafafa;
+    }
+    .ea__search-row > i { color: #bbb; font-size: 13px; flex-shrink: 0; }
+    .ea__search-row input {
+        flex: 1;
+        border: none;
+        background: transparent;
+        outline: none;
+        font-size: 14px;
+        direction: rtl;
+        text-align: right;
+        font-family: inherit;
+        color: #1a1a1a;
+    }
+    .ea__search-list {
+        list-style: none;
+        margin: 0; padding: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+    .ea__search-item[hidden] { display: none; }
+    .ea__search-item a {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 4px;
+        font-size: 14px;
+        color: #333;
+        text-decoration: none;
+        border-bottom: 1px solid #f5f5f5;
+        transition: color .15s;
+    }
+    .ea__search-item:last-child a { border-bottom: none; }
+    .ea__search-item a:hover      { color: #0f1d3a; }
+    .ea__search-item a.is-active  { font-weight: 700; color: #0f1d3a; }
+    .ea__search-item a i          { font-size: 11px; color: #0f1d3a; }
+
+    /* ── Filter dropdown ────────────────────────────────── */
+    .ea__filter-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+    .ea__chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 14px;
+        border-radius: 999px;
+        border: 1.5px solid #e0e0e0;
+        background: #fff;
+        color: #555;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+        transition: border-color .15s, background .15s, color .15s;
+    }
+    .ea__chip i { font-size: 12px; }
+    .ea__chip:hover                 { background:black; border-color: #0f1d3a; color: white; }
+    .ea__chip[aria-pressed="true"]  { border-color: #0f1d3a; background: #0f1d3a; color: #fff; }
+    .ea__filter-reset {
+        background: none;
+        border: none;
+        font-size: 13px;
+        color: #bbb;
+        cursor: pointer;
+        font-family: inherit;
+        padding: 5px 10px;
+        transition: color .15s;
+        border-radius:15px;
+    }
+    .ea__filter-reset:hover { color: white; background:black }
+
+    /* ── Area filter ────────────────────────────────────── */
+    .ea__filter-section {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid #f0f0f0;
+    }
+    .ea__filter-section-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: #aaa;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        margin: 0 0 8px;
+    }
+    .ea__area-search-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid #e8e8e8;
+        border-radius: 8px;
+        padding: 7px 10px;
+        margin-bottom: 15px;
+        background: #fafafa;
+        transition: border-color .15s;
+    }
+    .ea__area-search-row:focus-within { border-color: #0f1d3a; }
+    .ea__area-search-row > i { color: #ccc; font-size: 11px; flex-shrink: 0; }
+    .ea__area-search {
+        flex: 1;
+        border: none;
+        background: transparent;
+        outline: none;
+        font-size: 13px;
+        direction: rtl;
+        text-align: right;
+        font-family: inherit;
+        color: #333;
+    }
+    .ea__area-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-height: 130px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+    .ea__chip--area { font-size: 12px; padding: 5px 12px; }
+    .ea__chip--area[hidden] { display: none; }
+
+    /* ── Exchange list ──────────────────────────────────── */
+    .ea__list {
+        list-style: none;
+        margin: 0; padding: 0;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #ededed;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .ea__item {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 10px;
+        border-bottom: 1px solid #f5f5f5;
+        transition: background .15s;
+    }
+    .ea__item:last-child  { border-bottom: none; }
+    .ea__item:hover       { background: #fafafa; }
+    .ea__item[hidden]     { display: none; }
+
+    .ea__item-link {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        border-radius: inherit;
+    }
+    .ea__item-left {
+        position: relative;
+        z-index: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+    .ea__rank {
+        font-size: 17px;
+        font-weight: 700;
+        color: #aaa;
+        min-width: 28px;
+        text-align: center;
+    }
+    .ea__rank--top3 {
+        color: #e1b93b;
+    }
+    .ea__logo {
+        width: 50px; height: 50px;
+        border-radius: 50%;
+        background: #f2f2f242;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        flex-shrink: 0;
+        border: 1px solid #ebebeb;
+    }
+    .ea__logo img { width: 100%; height: 100%; object-fit: cover; }
+    .ea__logo i   { font-size: 20px; color: #bbb; }
+
+    .ea__info {
+        position: relative;
+        z-index: 0;
+        flex: 1;
+        min-width: 0;
+    }
+    .ea__name {
+        font-size: 15px;
+        font-weight: 700;
+        color: #1a1a1a;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        line-height: 1.3;
+        margin: 0;
+    }
+    .ea__name a { color: inherit; text-decoration: none; }
+    .ea__name a:hover { text-decoration: underline; }
+    .ea__rating {
+        font-size: 13px;
+        font-weight: 600;
+        color: #d4a017;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+    }
+    .ea__rating i  { font-size: 10px; }
+    .ea__area { margin: 3px 0 0; font-size: 13px; color: #999; }
+
+    .ea__rate-btn {
+        position: relative;
+        z-index: 2;
+        flex-shrink: 0;
+        padding: 8px 15px;
+        border: 1.5px solid #d8d8d8;
+        border-radius: 15px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #333;
+        background: transparent;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: border-color .18s, background .18s, color .18s;
+        font-family: inherit;
+    }
+    .ea__rate-btn:hover { border-color: #0f1d3a; background: #0f1d3a; color: #fff; }
+
+    .ea__empty, .ea__filter-empty {
+        list-style: none;
+        text-align: center;
+        color: #aaa;
+        padding: 48px 0;
+        font-size: 15px;
+        margin: 0;
+    }
+    .ea__filter-empty[hidden] { display: none; }
+
+    /* ── Responsive ─────────────────────────────────────── */
+    @media (max-width: 480px) {
+        .ea__title    { font-size: 18px; }
+        .ea__pill     { padding: 6px 12px; font-size: 13px; }
+        .ea__bar-btn  { padding: 6px 10px; font-size: 12px; }
+        .ea__logo     { width: 44px; height: 44px; }
+        .ea__name     { font-size: 14px; }
+        .ea__rate-btn { padding: 6px 11px; font-size: 12px; }
+    }
+    </style>
+
+    <script>
+    (function () {
+        var uid         = <?php echo wp_json_encode( $uid ); ?>;
+        var searchBtn   = document.getElementById( uid + 'SearchBtn' );
+        var filterBtn   = document.getElementById( uid + 'FilterBtn' );
+        var searchDrop  = document.getElementById( uid + 'SearchDrop' );
+        var filterDrop  = document.getElementById( uid + 'FilterDrop' );
+        var searchInput = document.getElementById( uid + 'SearchInput' );
+        var searchClose = document.getElementById( uid + 'SearchClose' );
+        var searchList  = document.getElementById( uid + 'SearchList' );
+        var filterChips = document.getElementById( uid + 'Chips' );
+        var filterReset = document.getElementById( uid + 'FilterReset' );
+        var filterBadge = document.getElementById( uid + 'FilterBadge' );
+        var areaList    = document.getElementById( uid + 'AreaList' );
+        var areaSearch  = document.getElementById( uid + 'AreaSearch' );
+        var list        = document.getElementById( uid + 'List' );
+        var emptyMsg    = document.getElementById( uid + 'FilterEmpty' );
+
+        var activeFilters = {};
+        var activeAreas   = new Set();
+
+        // ── Drop open / close ─────────────────────────────
+        function openDrop( drop, triggerBtn ) {
+            [searchDrop, filterDrop].forEach( function(d) {
+                if ( d !== drop ) closeDrop( d );
+            });
+            drop.hidden = false;
+            requestAnimationFrame( function() { drop.classList.add('is-open'); } );
+            if ( triggerBtn ) triggerBtn.setAttribute('aria-expanded', 'true');
+        }
+        function closeDrop( drop ) {
+            if ( !drop || drop.hidden ) return;
+            drop.classList.remove('is-open');
+            drop.addEventListener('transitionend', function handler() {
+                drop.hidden = true;
+                drop.removeEventListener('transitionend', handler);
+            });
+            if ( drop === searchDrop && searchBtn ) searchBtn.setAttribute('aria-expanded', 'false');
+            if ( drop === filterDrop && filterBtn ) filterBtn.setAttribute('aria-expanded', 'false');
+        }
+
+        if ( searchBtn ) {
+            searchBtn.addEventListener('click', function() {
+                if ( !searchDrop.hidden ) { closeDrop(searchDrop); return; }
+                openDrop( searchDrop, searchBtn );
+                setTimeout( function() { searchInput && searchInput.focus(); }, 30 );
+            });
+        }
+        if ( filterBtn ) {
+            filterBtn.addEventListener('click', function() {
+                if ( !filterDrop.hidden ) { closeDrop(filterDrop); return; }
+                openDrop( filterDrop, filterBtn );
+            });
+        }
+        if ( searchClose ) {
+            searchClose.addEventListener('click', function() {
+                closeDrop(searchDrop);
+                if ( searchInput ) searchInput.value = '';
+                filterCitySearch('');
+            });
+        }
+
+        // Click outside closes both drops
+        document.addEventListener('click', function(e) {
+            var wrap = searchBtn && searchBtn.closest('.ea__filter-wrap');
+            if ( wrap && !wrap.contains(e.target) ) {
+                closeDrop(searchDrop);
+                closeDrop(filterDrop);
+            }
+        });
+
+        // Escape key
+        document.addEventListener('keydown', function(e) {
+            if ( e.key === 'Escape' ) { closeDrop(searchDrop); closeDrop(filterDrop); }
+        });
+
+        // ── City search (city dropdown) ───────────────────
+        if ( searchInput ) {
+            searchInput.addEventListener('input', function() {
+                filterCitySearch( this.value.trim() );
+            });
+        }
+        function filterCitySearch(q) {
+            var ql = q.toLowerCase();
+            if ( !searchList ) return;
+            searchList.querySelectorAll('.ea__search-item').forEach( function(li) {
+                li.hidden = !! ( ql && (li.dataset.name || '').toLowerCase().indexOf(ql) === -1 );
+            });
+        }
+
+        // ── Boolean filter chips (verified / digital / rated) ─
+        if ( filterChips ) {
+            filterChips.querySelectorAll('.ea__chip').forEach( function(chip) {
+                chip.addEventListener('click', function() {
+                    var key    = this.dataset.filter;
+                    var active = this.getAttribute('aria-pressed') === 'true';
+                    this.setAttribute('aria-pressed', active ? 'false' : 'true');
+                    if ( active ) delete activeFilters[key];
+                    else activeFilters[key] = true;
+                    applyFilters();
+                    updateBadge();
+                });
+            });
+        }
+
+        // ── Area chips ────────────────────────────────────
+        if ( areaList ) {
+            areaList.querySelectorAll('.ea__chip--area').forEach( function(chip) {
+                chip.addEventListener('click', function() {
+                    var area   = this.dataset.area;
+                    var active = this.getAttribute('aria-pressed') === 'true';
+                    this.setAttribute('aria-pressed', active ? 'false' : 'true');
+                    if ( active ) activeAreas.delete( area );
+                    else activeAreas.add( area );
+                    applyFilters();
+                    updateBadge();
+                });
+            });
+        }
+
+        // ── Area search (inside filter panel) ────────────
+        if ( areaSearch ) {
+            areaSearch.addEventListener('input', function() {
+                var q = this.value.trim().toLowerCase();
+                if ( !areaList ) return;
+                areaList.querySelectorAll('.ea__chip--area').forEach( function(chip) {
+                    chip.hidden = !! ( q && chip.dataset.area.toLowerCase().indexOf(q) === -1 );
+                });
+            });
+        }
+
+        // ── Apply all active filters ──────────────────────
+        function applyFilters() {
+            if ( !list ) return;
+            var keys    = Object.keys(activeFilters);
+            var items   = list.querySelectorAll('.ea__item');
+            var visible = 0;
+            items.forEach( function(item) {
+                var passFlags = keys.every( function(k) {
+                    return item.dataset[k] === '1';
+                });
+                var passArea = activeAreas.size === 0
+                    || activeAreas.has( item.dataset.area || '' );
+                item.hidden = !( passFlags && passArea );
+                if ( !item.hidden ) visible++;
+            });
+            if ( emptyMsg ) emptyMsg.hidden = visible > 0;
+        }
+
+        // ── Badge: total active filters ───────────────────
+        function updateBadge() {
+            if ( !filterBadge ) return;
+            var count = Object.keys(activeFilters).length + activeAreas.size;
+            filterBadge.hidden      = count === 0;
+            filterBadge.textContent = count;
+        }
+
+        // ── Reset all ─────────────────────────────────────
+        if ( filterReset ) {
+            filterReset.addEventListener('click', function() {
+                activeFilters = {};
+                activeAreas.clear();
+                if ( filterChips ) {
+                    filterChips.querySelectorAll('.ea__chip').forEach( function(c) {
+                        c.setAttribute('aria-pressed', 'false');
+                    });
+                }
+                if ( areaList ) {
+                    areaList.querySelectorAll('.ea__chip--area').forEach( function(c) {
+                        c.setAttribute('aria-pressed', 'false');
+                        c.hidden = false;
+                    });
+                }
+                if ( areaSearch ) areaSearch.value = '';
+                applyFilters();
+                updateBadge();
+            });
+        }
+    })();
+    </script>
+    <?php endif; ?>
+
+    <?php
+    return ob_get_clean();
+}
+add_shortcode( 'exchange_archive', 'exchange_archive_shortcode' );
