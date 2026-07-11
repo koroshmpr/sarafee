@@ -39,3 +39,26 @@ require get_stylesheet_directory() . '/exchanges/exchangeDetails.php';
 require get_stylesheet_directory() . '/exchanges/exchangeAbout.php';
 require get_stylesheet_directory() . '/exchanges/exchangeArchive.php';
 require get_stylesheet_directory() . '/exchanges/exchangeUrls.php';
+// symbols
+require get_stylesheet_directory() . '/symbols/symbolUrls.php';
+require get_stylesheet_directory() . '/symbols/currencyCardTable.php';
+require get_stylesheet_directory() . '/symbols/currencyLivePrice.php';
+require get_stylesheet_directory() . '/symbols/related_post.php';
+
+// --- INCLUDE CUSTOM FUNCTIONALITY --- //
+$inc_dir = get_stylesheet_directory() . '/inc/';
+
+// Custom TinyMCE buttons
+if (file_exists($inc_dir . 'custom-tiny-mce-button.php')) {
+    require_once $inc_dir . 'custom-tiny-mce-button.php';
+}
+
+// REST API Endpoints (n8n integration)
+if (file_exists($inc_dir . 'rest-api.php')) {
+    require_once $inc_dir . 'rest-api.php';
+}
+
+// Custom Shortcodes
+if (file_exists($inc_dir . 'shortcodes.php')) {
+    require_once $inc_dir . 'shortcodes.php';
+}

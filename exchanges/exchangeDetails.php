@@ -1,6 +1,24 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
+/**
+ * Builds a no-API-key Google Maps embed URL.
+ * Prefers lat/lng parsed out of a pasted Google Maps share link (…@lat,lng,z…),
+ * falls back to the free-text address, then to the raw map link itself.
+ */
+function exd_map_embed_src( $map_url, $address ) {
+    if ( $map_url && preg_match( '#@(-?\d+\.\d+),(-?\d+\.\d+)#', $map_url, $m ) ) {
+        $q = $m[1] . ',' . $m[2];
+    } elseif ( $address ) {
+        $q = $address;
+    } elseif ( $map_url ) {
+        $q = $map_url;
+    } else {
+        return '';
+    }
+    return 'https://www.google.com/maps?q=' . rawurlencode( $q ) . '&output=embed';
+}
+
 function exchange_details_shortcode() {
     $post_id = get_the_ID();
 
@@ -10,18 +28,22 @@ function exchange_details_shortcode() {
     $website  = get_field( 'website',          $post_id );
     $map      = get_field( 'map',              $post_id );
     $phone    = get_field( 'phone',            $post_id );
+    $address  = get_field( 'address',          $post_id ); // ACF textarea
     $license  = get_field( 'license',          $post_id ); // ACF gallery → array
 
     $has_badges  = $verified || $rank || $currency;
-    $has_actions = $website  || $map  || $phone;
+    $has_info    = $address  || $phone || $website || $map;
     $has_license = ! empty( $license ) && is_array( $license );
 
-    if ( ! $has_badges && ! $has_actions && ! $has_license ) {
+    if ( ! $has_badges && ! $has_info && ! $has_license ) {
         return '';
     }
 
     // Unique per-post ID so multiple shortcodes on one page never clash.
     $uid = 'exd_' . absint( $post_id );
+
+    $map_url       = $map['url'] ?? '';
+    $map_embed_src = ( $address || $map_url ) ? exd_map_embed_src( $map_url, $address ) : '';
 
     // Build image list once; passed to JS lightbox as JSON.
     $license_images = [];
@@ -51,7 +73,7 @@ function exchange_details_shortcode() {
         <?php if ( $currency ) : ?>
         <span class="exd-badge exd-badge--purple">
             <i class="fas fa-coins" aria-hidden="true"></i>
-            تبدیل ارز دیجیتال 
+            تبدیل ارز دیجیتال
         </span>
         <?php endif; ?>
 
@@ -65,31 +87,41 @@ function exchange_details_shortcode() {
     </div>
     <?php endif; ?>
 
-    <?php if ( $has_actions ) : ?>
-    <div class="exd-action-card" dir="rtl">
+    <?php if ( $has_info ) : ?>
+    <!-- ── Contact info: Google-Maps-style card (display only, not linkable) ── -->
+    <div class="exd-info" dir="rtl">
 
-        <?php if ( $website ) : ?>
-        <div class="exd-action-item">
-            <div class="exd-icon-circle"><i class="fas fa-globe" aria-hidden="true"></i></div>
-            <span dir="ltr"><?php echo esc_html( preg_replace( '#^https?://#', '', rtrim( $website, '/' ) ) ); ?></span>
+        <?php if ( $address ) : ?>
+        <div class="exd-info__row">
+            <div class="exd-info__icon"><i class="fas fa-map-marker-alt" aria-hidden="true"></i></div>
+            <div class="exd-info__text"><?php echo nl2br( esc_html( $address ) ); ?></div>
         </div>
-        <?php endif; ?>
-
-        <?php if ( $map ) : ?>
-        <a href="<?php echo esc_url( $map['url'] ?? '' ); ?>"
-           class="exd-action-item"
-           target="_blank"
-           rel="noopener noreferrer">
-            <div class="exd-icon-circle"><i class="fas fa-map-marker-alt" aria-hidden="true"></i></div>
-            <span>نقشه</span>
-        </a>
         <?php endif; ?>
 
         <?php if ( $phone ) : ?>
-        <div class="exd-action-item">
-            <div class="exd-icon-circle"><i class="fas fa-phone-alt" aria-hidden="true"></i></div>
-            <span dir="ltr"><?php echo esc_html( $phone ); ?></span>
+        <div class="exd-info__row">
+            <div class="exd-info__icon"><i class="fas fa-phone-alt" aria-hidden="true"></i></div>
+            <div class="exd-info__text" dir="ltr"><?php echo esc_html( $phone ); ?></div>
         </div>
+        <?php endif; ?>
+
+        <?php if ( $website ) : ?>
+        <div class="exd-info__row">
+            <div class="exd-info__icon"><i class="fas fa-globe" aria-hidden="true"></i></div>
+            <div class="exd-info__text" dir="ltr"><?php echo esc_html( preg_replace( '#^https?://#', '', rtrim( $website, '/' ) ) ); ?></div>
+        </div>
+        <?php endif; ?>
+
+        <?php if ( $map_embed_src ) : ?>
+        <button type="button"
+                class="exd-info__map-btn"
+                id="<?php echo esc_attr( $uid ); ?>MapBtn"
+                aria-expanded="false"
+                aria-controls="<?php echo esc_attr( $uid ); ?>MapSheet"
+                data-src="<?php echo esc_url( $map_embed_src ); ?>">
+            <i class="fas fa-map-marked-alt" aria-hidden="true"></i>
+            نمایش روی نقشه
+        </button>
         <?php endif; ?>
 
     </div>
@@ -242,6 +274,74 @@ function exchange_details_shortcode() {
 
     <?php endif; ?>
 
+    <?php if ( $map_embed_src ) : ?>
+    <!-- Map bottom-sheet (offcanvas). Trigger is a <button>, so clicking it never navigates away. -->
+    <div class="exd-map-sheet" id="<?php echo esc_attr( $uid ); ?>MapSheet" role="dialog" aria-modal="true" aria-label="نقشه" hidden>
+        <div class="exd-map-sheet__bd" id="<?php echo esc_attr( $uid ); ?>MapSheetBd"></div>
+        <div class="exd-map-sheet__panel">
+            <div class="exd-map-sheet__handle" aria-hidden="true"></div>
+            <div class="exd-map-sheet__header">
+                <span>موقعیت روی نقشه</span>
+                <button class="exd-map-sheet__close" id="<?php echo esc_attr( $uid ); ?>MapSheetClose" aria-label="بستن">
+                    <i class="fas fa-times" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="exd-map-sheet__frame">
+                <iframe id="<?php echo esc_attr( $uid ); ?>MapFrame"
+                        loading="lazy"
+                        referrerpolicy="no-referrer-when-downgrade"
+                        title="نقشه موقعیت"></iframe>
+            </div>
+            <?php if ( $map_url ) : ?>
+            <a href="<?php echo esc_url( $map_url ); ?>" target="_blank" rel="noopener noreferrer" class="exd-map-sheet__external">
+                <i class="fas fa-external-link-alt" aria-hidden="true"></i>
+                مشاهده در Google Maps
+            </a>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        var uid         = <?php echo wp_json_encode( $uid ); ?>;
+        var mapBtn      = document.getElementById( uid + 'MapBtn' );
+        var sheet       = document.getElementById( uid + 'MapSheet' );
+        var sheetBd     = document.getElementById( uid + 'MapSheetBd' );
+        var sheetClose  = document.getElementById( uid + 'MapSheetClose' );
+        var frame       = document.getElementById( uid + 'MapFrame' );
+        var frameLoaded = false;
+
+        function openSheet() {
+            if ( ! frameLoaded ) {
+                frame.src = mapBtn.dataset.src;
+                frameLoaded = true;
+            }
+            sheet.hidden = false;
+            mapBtn.setAttribute( 'aria-expanded', 'true' );
+            document.body.style.overflow = 'hidden';
+            requestAnimationFrame( function () { sheet.classList.add( 'is-open' ); } );
+        }
+
+        function closeSheet() {
+            sheet.classList.remove( 'is-open' );
+            mapBtn.setAttribute( 'aria-expanded', 'false' );
+            document.body.style.overflow = '';
+            setTimeout( function () { sheet.hidden = true; }, 250 );
+        }
+
+        mapBtn.addEventListener( 'click', function ( e ) {
+            e.preventDefault();
+            openSheet();
+        } );
+        sheetClose.addEventListener( 'click', closeSheet );
+        sheetBd.addEventListener(    'click', closeSheet );
+        document.addEventListener( 'keydown', function ( e ) {
+            if ( e.key === 'Escape' && ! sheet.hidden ) closeSheet();
+        } );
+    } )();
+    </script>
+    <?php endif; ?>
+
     <?php
     static $css_printed = false;
     if ( ! $css_printed ) :
@@ -270,39 +370,59 @@ function exchange_details_shortcode() {
     .exd-badge--gold   { background: #fff8e5; color: #d4a017; }
     .exd-badge--purple { background: #f3eeff; color: #6c3fc9; }
 
-    /* ── Action card ─────────────────────────────────────── */
-    .exd-action-card {
-        display: flex;
-        justify-content: space-around;
+    /* ── Contact info card (Google-Maps-style rows) ──────── */
+    .exd-info {
         background: #fff;
-        border-radius: 24px;
-        padding: 25px 15px;
+        border-radius: 20px;
         border: 1px solid #f0f0f0;
         box-shadow: 0 8px 24px rgba(0,0,0,.02);
         margin-bottom: 24px;
+        overflow: hidden;
     }
-    .exd-action-item {
+    .exd-info__row {
         display: flex;
-        flex-direction: column;
         align-items: center;
-        gap: 10px;
-        text-decoration: none !important;
-        color: #333;
-        transition: color .2s;
+        gap: 14px;
+        padding: 16px 20px;
+        border-bottom: 1px solid #f2f2f2;
     }
-    .exd-action-item:hover .exd-icon-circle { background: #f5f5f5; }
-    .exd-icon-circle {
-        width: 56px; height: 56px;
+    .exd-info__row:last-of-type { border-bottom: none; }
+    .exd-info__icon {
+        width: 40px; height: 40px;
+        flex-shrink: 0;
         border-radius: 50%;
         border: 1px solid #e5e5e5;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 22px;
+        font-size: 16px;
         color: #1a1a1a;
-        transition: background .2s;
     }
-    .exd-action-item span { font-size: 14px; font-weight: 500; }
+    .exd-info__text {
+        font-size: 14px;
+        color: #333;
+        line-height: 1.6;
+        word-break: break-word;
+    }
+    .exd-info__map-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        padding: 15px;
+        background: #f7f5ff;
+        color: #6c3fc9;
+        border: none;
+        border-top: 1px solid #f2f2f2;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background .18s;
+    }
+    .exd-info__map-btn:hover { background: #efeaff; }
+    .exd-info__map-btn i { font-size: 15px; }
 
     /* ── License accordion ───────────────────────────────── */
     .exd-license {
@@ -329,7 +449,7 @@ function exchange_details_shortcode() {
         text-align: right;
         transition: background .15s;
     }
-    .exd-license__header:hover { background: #fafafa; color:black; }
+    .exd-license__header:hover , .exd-license__header:focus { background: #fafafa; color:black; }
     .exd-license__header-start {
         display: flex;
         align-items: center;
@@ -353,7 +473,7 @@ function exchange_details_shortcode() {
     .exd-license__header[aria-expanded="true"] .exd-license__chevron {
         transform: rotate(180deg);
     }
-    .exd-license__panel { padding: 4px 16px 16px; }
+    .exd-license__panel { padding:16px; }
     .exd-license__panel[hidden] { display: none; }
     .exd-license__thumbs {
         display: flex;
@@ -421,6 +541,7 @@ function exchange_details_shortcode() {
         letter-spacing: .04em;
     }
     .exd-lb__close {
+        padding:10px;
         position: fixed;
         top: 16px; left: 16px;
         z-index: 2;
@@ -439,6 +560,7 @@ function exchange_details_shortcode() {
     }
     .exd-lb__close:hover { background: rgba(255,255,255,.28); }
     .exd-lb__nav {
+        padding:10px;
         position: relative;
         z-index: 2;
         flex-shrink: 0;
@@ -459,11 +581,113 @@ function exchange_details_shortcode() {
     .exd-lb__nav:hover:not(:disabled) { background: rgba(255,255,255,.25); }
     .exd-lb__nav:disabled { opacity: .2; cursor: default; }
 
+    /* ── Map bottom-sheet (offcanvas) ─────────────────────── */
+    .exd-map-sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 99998;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+    }
+    .exd-map-sheet[hidden] { display: none; }
+    .exd-map-sheet__bd {
+        position: absolute;
+        inset: 0;
+        background: rgba(10,17,40,.45);
+        opacity: 0;
+        transition: opacity .25s ease;
+    }
+    .exd-map-sheet.is-open .exd-map-sheet__bd { opacity: 1; }
+    .exd-map-sheet__panel {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 560px;
+        background: #fff;
+        border-radius: 24px 24px 0 0;
+        padding: 10px 20px 20px;
+        box-sizing: border-box;
+        box-shadow: 0 -8px 40px rgba(0,0,0,.2);
+        transform: translateY(100%);
+        transition: transform .32s cubic-bezier(.32,.72,0,1);
+    }
+    .exd-map-sheet.is-open .exd-map-sheet__panel { transform: translateY(0); }
+    .exd-map-sheet__handle {
+        width: 40px; height: 4px;
+        background: #e0e0e0;
+        border-radius: 999px;
+        margin: 0 auto 14px;
+    }
+    .exd-map-sheet__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #1a1a1a;
+    }
+    .exd-map-sheet__close {
+        width: 32px; height: 32px;
+        padding:10px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        border: none;
+        background: #f2f2f2;
+        color: #555;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background .18s;
+    }
+    .exd-map-sheet__close:hover { background: #e5e5e5; }
+    .exd-map-sheet__frame {
+        width: 100%;
+        height: 320px;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid #ececec;
+    }
+    .exd-map-sheet__frame iframe {
+        width: 100%; height: 100%; border: 0; display: block;
+    }
+    .exd-map-sheet__external {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 14px;
+        padding: 12px;
+        border-radius: 12px;
+        background: #f7f5ff;
+        color: #6c3fc9;
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none !important;
+        transition: background .18s;
+    }
+    .exd-map-sheet__external:hover { background: #efeaff; }
+
+    /* ── Desktop ────────────────────────────────────────── */
+    @media (min-width: 769px) {
+        .exd-badges,
+        .exd-info,
+        .exd-license {
+            max-width: 560px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    }
+
+    /* ── Mobile ─────────────────────────────────────────── */
     @media (max-width: 480px) {
         .exd-lb__nav    { width: 40px; height: 40px; font-size: 16px; margin: 0 6px; }
         .exd-lb__img    { max-width: 96vw; }
         .exd-lb__close  { top: 10px; left: 10px; }
         .exd-license__thumb { width: 68px; height: 68px; }
+        .exd-map-sheet__frame { height: 260px; }
     }
     </style>
     <?php endif; ?>

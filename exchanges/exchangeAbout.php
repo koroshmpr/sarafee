@@ -1,26 +1,61 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-function exchange_about_shortcode() {
-    $content = get_the_content();
-
-    if ( ! $content ) {
+function exchange_about_shortcode( $atts ) {
+    // 1. Prevent Infinite Loops in Elementor/WordPress
+    // If this shortcode is placed inside the content it is trying to retrieve, it will cause a fatal error.
+    static $is_running = false;
+    if ( $is_running ) {
         return '';
+    }
+
+    $atts = shortcode_atts( [ 'label' => '' ], $atts );
+    $post_id = get_the_ID();
+
+    if ( ! $post_id ) {
+        return '';
+    }
+
+    // Lock the shortcode from running inside itself
+    $is_running = true;
+    
+    $content = get_the_content();
+    if ( ! $content ) {
+        $is_running = false;
+        return '';
+    }
+
+    $uid       = 'ea_about_' . absint( $post_id ) . '_' . wp_rand(100, 999);
+    $post_type = get_post_type( $post_id );
+
+    if ( $atts['label'] !== '' ) {
+        $label = esc_html( $atts['label'] );
+    } else {
+        $labels = [
+            'exchange' => 'درباره صرافی',
+            'symbol'   => 'درباره ارز',
+            'post'     => 'درباره این مطلب',
+        ];
+        // Fallback for ANY other post type
+        $label = $labels[ $post_type ] ?? 'درباره';
     }
 
     ob_start();
     ?>
-    <div class="exchange-about">
-        <h2 class="exchange-about__title">درباره صرافی</h2>
+    <div class="exchange-about" id="<?php echo esc_attr( $uid ); ?>">
+        <h2 class="exchange-about__title"><?php echo $label; ?></h2>
 
-        <div class="exchange-about__body" id="exchangeAboutBody">
+        <div class="exchange-about__body">
             <div class="exchange-about__content">
-                <?php $content; ?>
+                <?php 
+                // Safely output content
+                echo apply_filters( 'the_content', $content ); 
+                ?>
             </div>
-            <div class="exchange-about__fade" id="exchangeAboutFade"></div>
+            <div class="exchange-about__fade"></div>
         </div>
 
-        <button class="exchange-about__toggle" id="exchangeAboutToggle" aria-expanded="false">
+        <button class="exchange-about__toggle" aria-expanded="false">
             <span class="exchange-about__toggle-text">مشاهده توضیحات کامل</span>
             <i class="fas fa-chevron-down exchange-about__chevron"></i>
         </button>
@@ -56,7 +91,7 @@ function exchange_about_shortcode() {
         transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .exchange-about__body.is-open {
-        max-height: 2000px;
+        max-height: 5000px; /* Increased to ensure large content fits */
     }
     .exchange-about__content {
         font-size: 15px;
@@ -95,11 +130,13 @@ function exchange_about_shortcode() {
         font-size: 14px;
         font-weight: 600;
         color: #555555;
-        padding: 8px 0;
-        transition: color 0.2s ease;
+        transition: color 0.2s ease, background 0.2s ease;
+        padding: 15px 0;
+        border-radius: 8px;
     }
-    .exchange-about__toggle:hover {
+    .exchange-about__toggle:hover, .exchange-about__toggle:focus {
         color: #1a1a1a;
+        background: #f9f9f9;
     }
     .exchange-about__chevron {
         font-size: 13px;
@@ -125,22 +162,34 @@ function exchange_about_shortcode() {
 
     <script>
     (function () {
-        var toggle = document.getElementById('exchangeAboutToggle');
-        var body   = document.getElementById('exchangeAboutBody');
-        var label  = toggle ? toggle.querySelector('.exchange-about__toggle-text') : null;
+        // Using Event Delegation makes this work flawlessly in Elementor 
+        // and supports multiple shortcodes on the exact same page.
+        document.addEventListener('click', function (e) {
+            var toggleBtn = e.target.closest('.exchange-about__toggle');
+            if (!toggleBtn) return;
 
-        if ( ! toggle || ! body ) return;
+            var container = toggleBtn.closest('.exchange-about');
+            if (!container) return;
 
-        toggle.addEventListener('click', function () {
-            var isOpen = body.classList.toggle('is-open');
-            toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-            label.textContent = isOpen ? 'بستن توضیحات' : 'مشاهده توضیحات کامل';
+            var body = container.querySelector('.exchange-about__body');
+            var label = toggleBtn.querySelector('.exchange-about__toggle-text');
+
+            if (body) {
+                var isOpen = body.classList.toggle('is-open');
+                toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                
+                if (label) {
+                    label.textContent = isOpen ? 'بستن توضیحات' : 'مشاهده توضیحات کامل';
+                }
+            }
         });
     })();
     </script>
     <?php endif; ?>
 
     <?php
+    // Unlock the shortcode for subsequent independent uses on the same page
+    $is_running = false;
     return ob_get_clean();
 }
 add_shortcode( 'exchange_about', 'exchange_about_shortcode' );
