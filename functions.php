@@ -34,6 +34,7 @@ add_action( 'admin_enqueue_scripts', function () {
 require get_stylesheet_directory() . '/custom-components/faq.php';
 require get_stylesheet_directory() . '/custom-components/page-content.php';
 require get_stylesheet_directory() . '/custom-components/optimize.php';
+//require get_stylesheet_directory() . '/custom-components/rating-value.php';
 // exchanges
 require get_stylesheet_directory() . '/exchanges/exchangeDetails.php';
 require get_stylesheet_directory() . '/exchanges/exchangeAbout.php';

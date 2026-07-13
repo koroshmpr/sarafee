@@ -46,7 +46,7 @@ function exchange_about_shortcode( $atts ) {
         <h2 class="exchange-about__title"><?php echo $label; ?></h2>
 
         <div class="exchange-about__body">
-            <div class="exchange-about__content">
+            <div class="exchange-about__content" id="post_content">
                 <?php 
                 // Safely output content
                 echo apply_filters( 'the_content', $content ); 
