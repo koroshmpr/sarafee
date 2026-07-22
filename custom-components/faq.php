@@ -1,12 +1,22 @@
 <?php
 function my_acf_faq_shortcode( $atts ) {
-    if ( ! have_rows( 'faqs' ) ) {
+    $queried_object = get_queried_object();
+    $is_term = ( $queried_object instanceof WP_Term );
+
+    $selector = false;
+    if ( $is_term ) {
+        $selector = 'term_' . $queried_object->term_id;
+    } else {
+        $selector = get_the_ID();
+    }
+
+    if ( ! $selector || ! have_rows( 'faqs', $selector ) ) {
         return '';
     }
 
     // Collect all rows first so we can use the data for both the accordion and schema.
     $faqs = [];
-    while ( have_rows( 'faqs' ) ) : the_row();
+    while ( have_rows( 'faqs', $selector ) ) : the_row();
         $faqs[] = [
             'question' => get_sub_field( 'question' ),
             'answer'   => get_sub_field( 'answer' ),
@@ -53,6 +63,7 @@ function my_acf_faq_shortcode( $atts ) {
     </div>
 
     <!-- FAQPage structured data -->
+    <?php if ( ! is_tax( 'city' ) && ! is_singular( 'symbol' ) ) : ?>
     <script type="application/ld+json">
     <?php
     $schema = [
@@ -72,6 +83,7 @@ function my_acf_faq_shortcode( $atts ) {
     echo wp_json_encode( $schema, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT );
     ?>
     </script>
+    <?php endif; ?>
 
     <script>
     document.addEventListener("DOMContentLoaded", function () {

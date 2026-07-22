@@ -199,6 +199,33 @@ function render_custom_currency_card( $atts ) {
 
     ncc_enqueue_lightweight_charts();
 
+    // Resolve custom name from symbol post if exists
+    $symbol_posts = get_posts([
+        'post_type'      => 'symbol',
+        'name'           => $slug,
+        'posts_per_page' => 1,
+        'post_status'    => 'publish'
+    ]);
+    $symbol_post = ! empty( $symbol_posts ) ? $symbol_posts[0] : null;
+    
+    $fa_name = '';
+    if ( $symbol_post ) {
+        if ( function_exists( 'get_field' ) ) {
+            $fa_name = get_field( 'fa_name', $symbol_post->ID );
+        }
+        if ( empty( $fa_name ) ) {
+            $raw_title = $symbol_post->post_title;
+            $parts = preg_split( '/[|:|–|-]/', $raw_title );
+            $fa_name = trim( $parts[0] );
+            if ( mb_strpos( $fa_name, 'قیمت ' ) === 0 ) {
+                $fa_name = trim( mb_substr( $fa_name, 5 ) );
+            }
+            if ( mb_substr( $fa_name, -6 ) === ' امروز' ) {
+                $fa_name = trim( mb_substr( $fa_name, 0, -6 ) );
+            }
+        }
+    }
+
     $names = [
         'gbp' => 'پوند',
         'usd' => 'دلار',
@@ -213,7 +240,7 @@ function render_custom_currency_card( $atts ) {
         'sar' => 'ریال عربستان',
         'sek' => 'کرون سوئد',
     ];
-    $currency_name = $names[ $slug ] ?? strtoupper( $slug );
+    $currency_name = ! empty( $fa_name ) ? $fa_name : ( $names[ $slug ] ?? strtoupper( $slug ) );
 
     $periods = [
         // '1d' => '۱ روز',
@@ -223,6 +250,13 @@ function render_custom_currency_card( $atts ) {
         '1y' => '۱ سال',
         '5y' => '۵ سال',
     ];
+
+    $symbol_link = '';
+    if ( $symbol_post ) {
+        if ( ! ( is_singular( 'symbol' ) && get_the_ID() === $symbol_post->ID ) ) {
+            $symbol_link = get_permalink( $symbol_post->ID );
+        }
+    }
 
     ob_start();
     ?>
@@ -234,7 +268,15 @@ function render_custom_currency_card( $atts ) {
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
                     </svg>
                 </span>
-                <h2 class="ncc__title">تحلیل و نرخ <?php echo esc_html( $currency_name ); ?></h2>
+                <h2 class="ncc__title">
+                    <?php if ( $symbol_link ) : ?>
+                    <a href="<?php echo esc_url( $symbol_link ); ?>">
+                    <?php endif; ?>
+                    نمودار قیمت <?php echo esc_html( $currency_name ); ?>
+                    <?php if ( $symbol_link ) : ?>
+                    </a>
+                    <?php endif; ?>
+                </h2>
             </div>
 
             <div class="ncc__price-change">
@@ -311,6 +353,14 @@ function render_custom_currency_card( $atts ) {
         margin: 0;
         padding: 0;
         line-height: 1.3;
+    }
+    .ncc__title a {
+        color: inherit;
+        text-decoration: none;
+        transition: opacity 0.2s;
+    }
+    .ncc__title a:hover {
+        opacity: 0.8;
     }
     .ncc__icon {
         display: flex;

@@ -34,16 +34,26 @@ add_action( 'admin_enqueue_scripts', function () {
 require get_stylesheet_directory() . '/custom-components/faq.php';
 require get_stylesheet_directory() . '/custom-components/page-content.php';
 require get_stylesheet_directory() . '/custom-components/optimize.php';
+require get_stylesheet_directory() . '/custom-components/notice-box.php';
 //require get_stylesheet_directory() . '/custom-components/rating-value.php';
+
+//gravity form
+require get_stylesheet_directory() . '/gform/city-query.php';
+require get_stylesheet_directory() . '/gform/gravity-forms-style.php';
 // exchanges
 require get_stylesheet_directory() . '/exchanges/exchangeDetails.php';
 require get_stylesheet_directory() . '/exchanges/exchangeAbout.php';
 require get_stylesheet_directory() . '/exchanges/exchangeArchive.php';
+require get_stylesheet_directory() . '/exchanges/symbolExchangesList.php';
 require get_stylesheet_directory() . '/exchanges/exchangeUrls.php';
 // symbols
+require get_stylesheet_directory() . '/symbols/ai_currency_analysis.php';
+require get_stylesheet_directory() . '/symbols/ai_currency_forecast.php';
+require get_stylesheet_directory() . '/symbols/rest-api.php';
 require get_stylesheet_directory() . '/symbols/symbolUrls.php';
 require get_stylesheet_directory() . '/symbols/currencyCardTable.php';
 require get_stylesheet_directory() . '/symbols/currencyLivePrice.php';
+require get_stylesheet_directory() . '/symbols/currencyCalculator.php';
 require get_stylesheet_directory() . '/symbols/related_post.php';
 
 // --- INCLUDE CUSTOM FUNCTIONALITY --- //
@@ -62,4 +72,14 @@ if (file_exists($inc_dir . 'rest-api.php')) {
 // Custom Shortcodes
 if (file_exists($inc_dir . 'shortcodes.php')) {
     require_once $inc_dir . 'shortcodes.php';
+}
+
+// City Taxonomy Schema
+if (file_exists($inc_dir . 'city-schema.php')) {
+    require_once $inc_dir . 'city-schema.php';
+}
+
+// Symbol Single Schema
+if (file_exists($inc_dir . 'symbol-schema.php')) {
+    require_once $inc_dir . 'symbol-schema.php';
 }

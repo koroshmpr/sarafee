@@ -10,34 +10,44 @@ function exchange_about_shortcode( $atts ) {
     }
 
     $atts = shortcode_atts( [ 'label' => '' ], $atts );
-    $post_id = get_the_ID();
 
-    if ( ! $post_id ) {
+    $queried_object = get_queried_object();
+    $is_term = ( $queried_object instanceof WP_Term );
+
+    if ( $is_term ) {
+        $content = term_description( $queried_object->term_id );
+        $uid     = 'ea_about_term_' . absint( $queried_object->term_id ) . '_' . wp_rand(100, 999);
+    } else {
+        $post_id = get_the_ID();
+        if ( ! $post_id ) {
+            return '';
+        }
+        $content   = get_the_content();
+        $uid       = 'ea_about_' . absint( $post_id ) . '_' . wp_rand(100, 999);
+        $post_type = get_post_type( $post_id );
+    }
+
+    if ( ! $content ) {
         return '';
     }
 
     // Lock the shortcode from running inside itself
     $is_running = true;
-    
-    $content = get_the_content();
-    if ( ! $content ) {
-        $is_running = false;
-        return '';
-    }
-
-    $uid       = 'ea_about_' . absint( $post_id ) . '_' . wp_rand(100, 999);
-    $post_type = get_post_type( $post_id );
 
     if ( $atts['label'] !== '' ) {
         $label = esc_html( $atts['label'] );
     } else {
-        $labels = [
-            'exchange' => 'درباره صرافی',
-            'symbol'   => 'درباره ارز',
-            'post'     => 'درباره این مطلب',
-        ];
-        // Fallback for ANY other post type
-        $label = $labels[ $post_type ] ?? 'درباره';
+        if ( $is_term ) {
+            $label = 'درباره ' . esc_html( $queried_object->name );
+        } else {
+            $labels = [
+                'exchange' => 'درباره صرافی',
+                'symbol'   => 'درباره ارز',
+                'post'     => 'درباره این مطلب',
+            ];
+            // Fallback for ANY other post type
+            $label = $labels[ $post_type ] ?? 'درباره';
+        }
     }
 
     ob_start();

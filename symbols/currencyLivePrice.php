@@ -20,22 +20,57 @@ function render_currency_live_price( $atts ) {
     $instance++;
     $uid = 'clp_' . $instance . '_' . $slug;
 
+    // Fetch fa_name
+    $fa_name = '';
+    $symbol_post = null;
+    if ( $atts['slug'] !== '' ) {
+        $posts = get_posts( [
+            'post_type'      => 'symbol',
+            'name'           => sanitize_key( $atts['slug'] ),
+            'posts_per_page' => 1,
+            'post_status'    => 'publish',
+        ] );
+        if ( ! empty( $posts ) ) {
+            $symbol_post = $posts[0];
+        }
+    } elseif ( $post && $post->post_type === 'symbol' ) {
+        $symbol_post = $post;
+    }
+
+    if ( $symbol_post ) {
+        $fa_name = function_exists( 'get_field' ) ? get_field( 'fa_name', $symbol_post->ID ) : '';
+        if ( empty( $fa_name ) ) {
+            $clean_title = $symbol_post->post_title;
+            $parts = preg_split( '/[|:|–|-]/', $clean_title );
+            $clean_title = trim( $parts[0] );
+            if ( mb_strpos( $clean_title, 'قیمت ' ) === 0 ) {
+                $clean_title = trim( mb_substr( $clean_title, 5 ) );
+            }
+            if ( mb_substr( $clean_title, -6 ) === ' امروز' ) {
+                $clean_title = trim( mb_substr( $clean_title, 0, -6 ) );
+            }
+            $fa_name = $clean_title;
+        }
+    }
+
     ob_start();
     ?>
-    <span class="clp__live">
-        <span class="clp__live-dot"></span>
-        <span class="clp__live-label">زنده</span>
-    </span>
     <div class="clp__price-row">
         <span class="clp__price">···</span>
-        <span class="clp__unit">تومان</span>
+        <div class="clp__meta-col">
+            <span class="clp__live">
+                <span class="clp__live-dot"></span>
+                <span class="clp__live-label">زنده</span>
+            </span>
+            <span class="clp__unit">تومان</span>
+        </div>
     </div>
     <span class="clp__change">
         <svg class="clp__change-arrow" width="12" height="12" fill="none"
              stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true">
             <path class="clp__arrow-path"
-                  stroke-linecap="round" stroke-linejoin="round"
-                  d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25"/>
+                   stroke-linecap="round" stroke-linejoin="round"
+                   d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25"/>
         </svg>
         <span class="clp__change-pct">···</span>
     </span>
@@ -47,11 +82,17 @@ function render_currency_live_price( $atts ) {
     <div class="clp-root" id="<?php echo esc_attr( $uid ); ?>" dir="rtl">
 
         <div class="clp" data-clp-role="inline">
+            <?php if ( ! empty( $fa_name ) ) : ?>
+                <h1 class="clp__title"><?php echo esc_html( $fa_name ); ?></h1>
+            <?php endif; ?>
             <?php echo $clp_inner; ?>
         </div>
 
         <div class="clp-float" data-clp-role="float-wrap">
             <div class="clp clp--floating" data-clp-role="floating">
+                <?php if ( ! empty( $fa_name ) ) : ?>
+                    <span class="clp__title"><?php echo esc_html( $fa_name ); ?></span>
+                <?php endif; ?>
                 <?php echo $clp_inner; ?>
             </div>
         </div>
@@ -77,20 +118,38 @@ function render_currency_live_price( $atts ) {
         box-sizing: border-box;
     }
 
+    .clp__title {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #0A1128;
+        margin: 0;
+        padding: 0;
+        white-space: nowrap;
+    }
+
+    .clp__meta-col {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.125rem;
+        line-height: 1;
+    }
+
     .clp__live {
         display: inline-flex;
         align-items: center;
-        gap: .3125rem;
+        gap: .25rem;
         flex-shrink: 0;
     }
     .clp__live-label {
-        font-size: .6875rem;
+        font-size: .625rem;
         font-weight: 700;
         color: #059669;
+        line-height: 1;
     }
     .clp__live-dot {
-        width: 6px;
-        height: 6px;
+        width: 5px;
+        height: 5px;
         border-radius: 50%;
         background: #10b981;
         flex-shrink: 0;
@@ -107,16 +166,17 @@ function render_currency_live_price( $atts ) {
 
     .clp__price-row {
         display: flex;
-        align-items: baseline;
+        align-items: center;
         justify-content: center;
-        gap: .3rem;
+        gap: .375rem;
         flex: 1;
         min-width: 0;
     }
     .clp__unit {
-        font-size: .6875rem;
+        font-size: .625rem;
         color: #9ca3af;
         font-weight: 500;
+        line-height: 1;
     }
     .clp__price {
         font-size: 1.3125rem;

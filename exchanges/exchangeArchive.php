@@ -21,6 +21,8 @@ function exchange_archive_shortcode( $atts ) {
         'per_page'        => 50,
         'title_tag'       => '',
         'title'           => '',
+        'show_all'        => 'true',
+        'all_link'        => '',
     ], $atts );
 
     static $instance = 0;
@@ -36,6 +38,8 @@ function exchange_archive_shortcode( $atts ) {
         $city_slug    = isset( $_GET['city'] ) ? sanitize_text_field( wp_unslash( $_GET['city'] ) ) : '';
         $current_term = $city_slug ? get_term_by( 'slug', $city_slug, 'city' ) : null;
     }
+
+    $show_all_enabled = filter_var( $atts['show_all'], FILTER_VALIDATE_BOOLEAN );
 
     // ── Featured cities ───────────────────────────────────────────────────
     // Priority: 1) shortcode attr  2) ACF options page  3) top-5 by count
@@ -77,7 +81,7 @@ function exchange_archive_shortcode( $atts ) {
         }
     }
 
-    if ( ! $current_term && ! empty( $featured_terms ) ) {
+    if ( ! $current_term && ! empty( $featured_terms ) && ! $show_all_enabled ) {
         $current_term = $featured_terms[0];
     }
 
@@ -100,9 +104,13 @@ function exchange_archive_shortcode( $atts ) {
     $search_terms = array_merge( (array) $featured_terms, array_values( $non_featured ) );
 
     // ── Exchange query ────────────────────────────────────────────────────
+    $per_page = intval( $atts['per_page'] );
+    if ( $per_page === 50 ) {
+        $per_page = $is_tax_archive ? -1 : 10;
+    }
     $query_args = [
         'post_type'      => 'exchange',
-        'posts_per_page' => intval( $atts['per_page'] ),
+        'posts_per_page' => $per_page,
         'orderby'        => 'date',
         'order'          => 'DESC',
         'no_found_rows'  => true,
@@ -158,9 +166,13 @@ function exchange_archive_shortcode( $atts ) {
     <section class="ea" dir="rtl"
              aria-label="<?php echo $current_term ? esc_attr( 'صرافی‌های ' . $current_term->name ) : 'لیست صرافی‌ها'; ?>">
 
-        <?php if ( $show_title && $current_term ) : ?>
+        <?php if ( $show_title ) : ?>
         <<?php echo esc_attr( $title_tag ); ?> class="ea__title">
-            صرافی‌های <?php echo esc_html( $current_term->name ); ?>
+            <?php if ( $current_term ) : ?>
+                صرافی‌های <?php echo esc_html( $current_term->name ); ?>
+            <?php else : ?>
+                همه صرافی‌ها
+            <?php endif; ?>
         </<?php echo esc_attr( $title_tag ); ?>>
         <?php endif; ?>
 
@@ -173,6 +185,19 @@ function exchange_archive_shortcode( $atts ) {
                 <!-- Scrollable city pills (right side in RTL) -->
                 <div class="ea__pills-scroll">
                     <nav class="ea__filters" role="tablist" aria-label="فیلتر شهر">
+                        <?php if ( $show_all_enabled ) : 
+                            $all_active = ! $current_term;
+                            $all_url = ! empty( $atts['all_link'] ) ? esc_url( $atts['all_link'] ) : ( $is_tax_archive ? esc_url( home_url( '/' ) ) : esc_url( remove_query_arg( 'city' ) ) );
+                        ?>
+                        <a href="<?php echo $all_url; ?>"
+                           class="ea__pill<?php echo $all_active ? ' ea__pill--active' : ''; ?>"
+                           role="tab"
+                           aria-selected="<?php echo $all_active ? 'true' : 'false'; ?>"
+                           aria-label="نمایش همه صرافی‌ها">
+                            همه
+                        </a>
+                        <?php endif; ?>
+
                         <?php foreach ( $featured_terms as $term ) :
                             $active = $current_term && $current_term->term_id === $term->term_id;
                         ?>
@@ -343,7 +368,7 @@ function exchange_archive_shortcode( $atts ) {
                 data-rated="<?php echo $rating             ? '1' : '0'; ?>"
                 data-area="<?php echo esc_attr( (string) $area ); ?>">
 
-                <a class="ea__item-link"
+                <a class="ea__item-link" aria-label="open <?= esc_attr( $post_title ) ?? '' ;?> exchange"
                    href="<?php echo esc_url( $permalink ); ?>"
                    tabindex="-1"></a>
 
@@ -379,9 +404,23 @@ function exchange_archive_shortcode( $atts ) {
                         </span>
                         <?php endif; ?>
                     </p>
-                    <?php if ( $area ) : ?>
-                    <p class="ea__area"><?php echo esc_html( $area ); ?></p>
-                    <?php endif; ?>
+                    <div class="ea__meta">
+                        <?php if ( $verified ) : ?>
+                            <span class="ea__meta-item ea__meta-item--verified">
+                                <i class="fas fa-check-circle" aria-hidden="true"></i> معتبر
+                            </span>
+                        <?php endif; ?>
+                        <?php if ( $digital_currency ) : ?>
+                            <span class="ea__meta-item ea__meta-item--digital">
+                                <i class="fas fa-coins" aria-hidden="true"></i> ارز دیجیتال
+                            </span>
+                        <?php endif; ?>
+                        <?php if ( $area ) : ?>
+                            <span class="ea__meta-item">
+                                <i class="fas fa-map-marker-alt" aria-hidden="true"></i> <?php echo esc_html( $area ); ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
                 </div>
 
                 <button type="button"
@@ -400,6 +439,14 @@ function exchange_archive_shortcode( $atts ) {
         <?php endif; ?>
         </ul>
 
+        <?php if ( $is_tax_archive ) : ?>
+        <div class="ea__load-more-wrap" id="<?php echo esc_attr( $uid ); ?>LoadMoreWrap" hidden>
+            <button type="button" class="ea__load-more-btn" id="<?php echo esc_attr( $uid ); ?>LoadMoreBtn">
+                نمایش بیشتر
+            </button>
+        </div>
+        <?php endif; ?>
+
         <!-- Empty-after-filter message (hidden by default) -->
         <p class="ea__filter-empty" id="<?php echo esc_attr( $uid ); ?>FilterEmpty" hidden>
             هیچ صرافی با این فیلترها یافت نشد.
@@ -408,9 +455,9 @@ function exchange_archive_shortcode( $atts ) {
     </section>
 
     <?php
-    static $assets_done = false;
-    if ( ! $assets_done ) :
-        $assets_done = true;
+    global $sarafee_archive_assets_done;
+    if ( empty( $sarafee_archive_assets_done ) ) :
+        $sarafee_archive_assets_done = true;
     ?>
     <style>
     /* ── Base ───────────────────────────────────────────── */
@@ -794,15 +841,31 @@ function exchange_archive_shortcode( $atts ) {
     .ea__name a { color: inherit; text-decoration: none; }
     .ea__name a:hover { text-decoration: underline; }
     .ea__rating {
-        font-size: 13px;
-        font-weight: 600;
-        color: #d4a017;
-        display: flex;
+        display: inline-flex;
         align-items: center;
         gap: 3px;
+        font-size: 11px;
+        font-weight: 700;
+        color: #f39c12;
+        background: #fcf3cf;
+        padding: 2px 6px;
+        border-radius: 4px;
+        line-height: 1;
     }
-    .ea__rating i  { font-size: 10px; }
-    .ea__area { margin: 3px 0 0; font-size: 13px; color: #999; }
+    .ea__meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        font-size: 12px;
+        color: #777;
+        margin-top: 6px;
+    }
+    .ea__meta-item { display: flex; align-items: center; gap: 4px; }
+    .ea__meta-item i { font-size: 11px; color: #aaa; }
+    .ea__meta-item--verified { color: #27ae60; font-weight: 600; }
+    .ea__meta-item--verified i { color: #2ecc71; }
+    .ea__meta-item--digital i { color: #9b59b6; }
 
     .ea__rate-btn {
         position: relative;
@@ -832,14 +895,38 @@ function exchange_archive_shortcode( $atts ) {
     }
     .ea__filter-empty[hidden] { display: none; }
 
+    /* ── Load More ──────────────────────────────────────── */
+    .ea__load-more-wrap {
+        text-align: center;
+        margin-top: 20px;
+    }
+    .ea__load-more-wrap[hidden] { display: none; }
+    .ea__load-more-btn {
+        background: #f7f7f7;
+        border: 1px solid #ebebeb;
+        color: #555;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 10px 24px;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+    }
+    .ea__load-more-btn:hover {
+        background: #0f1d3a;
+        color: #fff;
+        border-color: #0f1d3a;
+    }
+
     /* ── Responsive ─────────────────────────────────────── */
     @media (max-width: 480px) {
-        .ea__title    { font-size: 18px; }
-        .ea__pill     { padding: 6px 12px; font-size: 13px; }
-        .ea__bar-btn  { padding: 6px 10px; font-size: 12px; }
-        .ea__logo     { width: 44px; height: 44px; }
-        .ea__name     { font-size: 14px; }
-        .ea__rate-btn { padding: 6px 11px; font-size: 12px; }
+        .ea .ea__title    { font-size: 18px; }
+        .ea .ea__pill     { padding: 6px 12px; font-size: 13px; }
+        .ea .ea__bar-btn  { padding: 6px 10px; font-size: 12px; }
+        .ea .ea__logo     { width: 44px; height: 44px; }
+        .ea .ea__name     { font-size: 14px; }
+        .ea .ea__rate-btn { padding: 6px 11px; font-size: 12px; }
     }
     </style>
 
@@ -860,9 +947,13 @@ function exchange_archive_shortcode( $atts ) {
         var areaSearch  = document.getElementById( uid + 'AreaSearch' );
         var list        = document.getElementById( uid + 'List' );
         var emptyMsg    = document.getElementById( uid + 'FilterEmpty' );
+        var loadMoreWrap= document.getElementById( uid + 'LoadMoreWrap' );
+        var loadMoreBtn = document.getElementById( uid + 'LoadMoreBtn' );
 
         var activeFilters = {};
         var activeAreas   = new Set();
+        var itemsToShow   = 10;
+        var isTaxArchive  = <?php echo $is_tax_archive ? 'true' : 'false'; ?>;
 
         // ── Drop open / close ─────────────────────────────
         function openDrop( drop, triggerBtn ) {
@@ -942,6 +1033,7 @@ function exchange_archive_shortcode( $atts ) {
                     this.setAttribute('aria-pressed', active ? 'false' : 'true');
                     if ( active ) delete activeFilters[key];
                     else activeFilters[key] = true;
+                    itemsToShow = 10;
                     applyFilters();
                     updateBadge();
                 });
@@ -957,6 +1049,7 @@ function exchange_archive_shortcode( $atts ) {
                     this.setAttribute('aria-pressed', active ? 'false' : 'true');
                     if ( active ) activeAreas.delete( area );
                     else activeAreas.add( area );
+                    itemsToShow = 10;
                     applyFilters();
                     updateBadge();
                 });
@@ -979,18 +1072,43 @@ function exchange_archive_shortcode( $atts ) {
             if ( !list ) return;
             var keys    = Object.keys(activeFilters);
             var items   = list.querySelectorAll('.ea__item');
-            var visible = 0;
+            var matchedItems = [];
+
             items.forEach( function(item) {
                 var passFlags = keys.every( function(k) {
                     return item.dataset[k] === '1';
                 });
                 var passArea = activeAreas.size === 0
                     || activeAreas.has( item.dataset.area || '' );
-                item.hidden = !( passFlags && passArea );
-                if ( !item.hidden ) visible++;
+                
+                if ( passFlags && passArea ) {
+                    matchedItems.push(item);
+                } else {
+                    item.hidden = true;
+                }
             });
-            if ( emptyMsg ) emptyMsg.hidden = visible > 0;
+
+            var limit = isTaxArchive ? itemsToShow : matchedItems.length;
+
+            matchedItems.forEach(function(item, index) {
+                item.hidden = (index >= limit);
+            });
+
+            if ( emptyMsg ) emptyMsg.hidden = matchedItems.length > 0;
+
+            if ( loadMoreWrap ) {
+                loadMoreWrap.hidden = (matchedItems.length <= limit);
+            }
         }
+
+        if ( loadMoreBtn ) {
+            loadMoreBtn.addEventListener('click', function() {
+                itemsToShow += 10;
+                applyFilters();
+            });
+        }
+
+        applyFilters();
 
         // ── Badge: total active filters ───────────────────
         function updateBadge() {
@@ -1005,6 +1123,7 @@ function exchange_archive_shortcode( $atts ) {
             filterReset.addEventListener('click', function() {
                 activeFilters = {};
                 activeAreas.clear();
+                itemsToShow = 10;
                 if ( filterChips ) {
                     filterChips.querySelectorAll('.ea__chip').forEach( function(c) {
                         c.setAttribute('aria-pressed', 'false');
