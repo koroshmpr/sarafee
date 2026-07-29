@@ -55,9 +55,15 @@ require get_stylesheet_directory() . '/symbols/currencyCardTable.php';
 require get_stylesheet_directory() . '/symbols/currencyLivePrice.php';
 require get_stylesheet_directory() . '/symbols/currencyCalculator.php';
 require get_stylesheet_directory() . '/symbols/related_post.php';
+require get_stylesheet_directory() . '/symbols/symbolArchiveTable.php';
+require get_stylesheet_directory() . '/symbols/headerMegaMenu.php';
 
 // --- INCLUDE CUSTOM FUNCTIONALITY --- //
 $inc_dir = get_stylesheet_directory() . '/inc/';
+require_once $inc_dir . 'import-symbols.php';
+
+
+require_once get_stylesheet_directory() . '/symbols/symbolSearch.php';
 
 // Custom TinyMCE buttons
 if (file_exists($inc_dir . 'custom-tiny-mce-button.php')) {

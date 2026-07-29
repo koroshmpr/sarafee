@@ -27,22 +27,21 @@ function output_custom_gform_styles() {
        ========================================================================== */
     
     /* Form Wrapper & Container */
-    .porsline-form {
+    .porsline-form,
+    .gform_wrapper {
         box-sizing: border-box !important;
-        overflow: hidden !important;
         transition: height 0.4s cubic-bezier(0.25, 1, 0.5, 1) !important;
 
         @media (max-width: 640px) {
-            padding: 24px 20px !important;
-            margin: 20px auto !important;
+            padding: 24px 10px !important;
+            margin: 0 auto !important;
             border-radius: 16px !important;
         }
 
-        /* Elementor Popup Fixes */
-        .elementor-popup-modal & {
-            display: block !important;
-            height: auto !important;
-        }
+        /* Elementor Popup & Container Height Fixes */
+        display: block !important;
+        height: auto;
+        overflow: visible;
 
         /* Form Fields Base */
         /* .gfield {
@@ -83,6 +82,7 @@ function output_custom_gform_styles() {
             border-radius: 10px !important;
             background-color: #ffffff !important;
             color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
             font-size: 15px !important;
             font-family: inherit !important;
             transition: all 0.2s ease !important;
@@ -98,9 +98,12 @@ function output_custom_gform_styles() {
         }
 
         select {
-            width: 90% !important;
-            padding: 10px 20px!important;
+            width: 85% !important;
+            padding: 5px 10px !important;
             box-sizing: content-box !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            background-color: #ffffff !important;
         }
 
         /* Force dark text color on standard select options, select fields, and Choices.js enhancements */
@@ -114,13 +117,15 @@ function output_custom_gform_styles() {
         .choices__list--dropdown .choices__item--selectable,
         .choices__list--single .choices__item--selectable {
             color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
             background-color: #ffffff !important;
-            box-sizing: content-box !important;
+            box-sizing: border-box !important;
         }
         
         .choices__list--dropdown .choices__item--selectable.is-highlighted {
             background-color: #eff6ff !important;
             color: #1e40af !important;
+            -webkit-text-fill-color: #1e40af !important;
         }
 
         /* Error Validation States */
@@ -255,7 +260,10 @@ function output_custom_gform_styles() {
                     box-sizing: border-box !important;
                     max-width: 100% !important;
                     margin: 0 !important;
-
+                    @media (max-width: 640px) {
+                        font-size: 11px !important;
+                        padding: 15px 8px !important;
+                    }
                     &::before {
                         content: "" !important;
                         display: inline-block !important;
@@ -348,6 +356,10 @@ function output_custom_gform_styles() {
             box-sizing: border-box !important;
             height: auto !important;
             line-height: 1.5 !important;
+            @media (max-width: 640px) {
+                font-size: 12px !important;
+                padding: 12px 20px !important;
+            }
         }
 
         /* Next / Submit buttons */
@@ -564,6 +576,10 @@ function output_custom_gform_scripts() {
 
             const formPage = formWrapper.find('.gform_page');
             if (!formPage.length) {
+                formWrapper.css({
+                    'height': 'auto',
+                    'overflow': 'visible'
+                });
                 return;
             }
 
@@ -574,7 +590,8 @@ function output_custom_gform_scripts() {
                     // Temporarily disable height transition to set start point, then measure destination
                     formWrapper.css({
                         'transition': 'none',
-                        'height': prevHeight + 'px'
+                        'height': prevHeight + 'px',
+                        'overflow': 'hidden'
                     });
                     
                     // Force a reflow
@@ -593,15 +610,20 @@ function output_custom_gform_scripts() {
                         'height': newHeight + 'px'
                     });
 
-                    // Revert to auto height after transition finishes to maintain responsive layout
+                    // Revert to auto height after transition finishes to maintain responsive layout & conditional logic expansion
                     setTimeout(function() {
                         formWrapper.css({
-                            'height': '',
+                            'height': 'auto',
                             'transition': '',
-                            'overflow': ''
+                            'overflow': 'visible'
                         });
                     }, 500);
                 }, 60);
+            } else {
+                formWrapper.css({
+                    'height': 'auto',
+                    'overflow': 'visible'
+                });
             }
 
             // Apply entry animations based on state
@@ -633,12 +655,38 @@ function output_custom_gform_scripts() {
             });
         });
 
+        // Listen for Gravity Forms conditional logic events to unlock and adjust height dynamically
+        $(document).on('gform_post_conditional_logic', function(event, formId, fields, isInit) {
+            const formWrapper = $('#gform_wrapper_' + formId);
+            if (formWrapper.length) {
+                setTimeout(function() {
+                    formWrapper.css({
+                        'height': 'auto',
+                        'overflow': 'visible'
+                    });
+                }, 50);
+            }
+        });
+
+        // Listen for change events on radio/checkbox/select inputs to ensure wrapper expands smoothly
+        $(document).on('change', '.gform_wrapper input, .gform_wrapper select', function() {
+            const formWrapper = $(this).closest('.gform_wrapper');
+            if (formWrapper.length) {
+                setTimeout(function() {
+                    formWrapper.css({
+                        'height': 'auto',
+                        'overflow': 'visible'
+                    });
+                }, 100);
+            }
+        });
+
         // Fix for Elementor Popups: Reset styles when popup opens
         $(document).on('elementor/popup/show', function() {
             $('.gform_wrapper').css({
-                'height': '',
+                'height': 'auto',
                 'transition': '',
-                'overflow': '',
+                'overflow': 'visible',
                 'display': 'block'
             });
         });

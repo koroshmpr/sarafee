@@ -24,42 +24,17 @@ function render_currency_calculator( $atts ) {
         $atts['from'] = 'usd';
     }
 
+    // 1. Query WP symbol posts for custom names and permalinks
+    $wp_symbols = [];
     $symbols_posts = get_posts( [
         'post_type'      => 'symbol',
         'post_status'    => 'publish',
         'posts_per_page' => -1,
     ] );
 
-    $symbols = [];
-
-    // 1. Toman pseudo-symbol
-    $symbols['toman'] = [
-        'slug'      => 'toman',
-        'name'      => 'تومان',
-        'code'      => 'تومان',
-        'icon'      => 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="%2300b894"><circle cx="12" cy="12" r="10" fill="%23e6f9f5"/><text x="12" y="16" font-family="Arial" font-size="11" font-weight="bold" fill="%2300b894" text-anchor="middle">ت</text></svg>',
-        'is_crypto' => false
-    ];
-
-    // 2. Loop symbols from DB
     foreach ( $symbols_posts as $sp ) {
-        $slug = $sp->post_name;
-        $logo = get_the_post_thumbnail_url( $sp->ID, 'thumbnail' );
-        
-        // Custom check for crypto
-        $is_crypto = false;
-        if ( function_exists( 'get_field' ) ) {
-            $is_crypto = get_field( 'is_crypto', $sp->ID ) ? true : false;
-        }
-        
-        // Generate SVG fallback icon with the first letter of symbol name if no featured image
-        if ( ! $logo ) {
-            $char = mb_substr( $sp->post_title, 0, 1, 'utf-8' );
-            $logo = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="10" fill="%23f1f2f6"/><text x="12" y="16" font-family="Arial" font-size="10" fill="%232f3542" text-anchor="middle">' . $char . '</text></svg>';
-        }
-
+        $slug = strtolower( $sp->post_name );
         $clean_title = $sp->post_title;
-        // Clean long SEO titles to get short name
         $parts = preg_split( '/[|:|–|-]/', $clean_title );
         $clean_title = trim( $parts[0] );
         if ( mb_strpos( $clean_title, 'قیمت ' ) === 0 ) {
@@ -69,20 +44,109 @@ function render_currency_calculator( $atts ) {
             $clean_title = trim( mb_substr( $clean_title, 0, -6 ) );
         }
 
-        // Get custom ACF field if configured
         $fa_name = function_exists( 'get_field' ) ? get_field( 'fa_name', $sp->ID ) : '';
         $display_name = ! empty( $fa_name ) ? trim( $fa_name ) : $clean_title;
 
-        $symbols[$slug] = [
-            'slug'      => $slug,
-            'name'      => $display_name,
-            'code'      => strtoupper( $slug ),
-            'icon'      => $logo,
-            'is_crypto' => $is_crypto
+        $wp_symbols[$slug] = [
+            'name' => $display_name,
+            'url'  => get_permalink($sp->ID),
         ];
     }
 
+    $symbols = [];
+
+    // Toman pseudo-symbol with Iran flag icon
+    $symbols['toman'] = [
+        'slug'       => 'toman',
+        'name'       => 'تومان',
+        'code'       => 'تومان',
+        'icon'       => 'https://market-pulse.khanes.app/storage/images/countries/ir.png',
+        'asset_type' => 'currency',
+        'price'      => 1,
+        'change'     => 0
+    ];
+
+    // Pre-fetch API models (cached for 5 minutes)
+    $transient_key = 'sat_api_models_v2';
+    $api_models = get_transient( $transient_key );
+
+    if ( false === $api_models || ! is_array( $api_models ) ) {
+        $response = wp_remote_get( 'https://market-pulse.khanes.app/api/v2/currencies?per_page=500', [ 'timeout' => 5 ] );
+        if ( ! is_wp_error( $response ) ) {
+            $body = wp_remote_retrieve_body( $response );
+            $json = json_decode( $body, true );
+            if ( ! empty( $json['data']['models'] ) && is_array( $json['data']['models'] ) ) {
+                $api_models = $json['data']['models'];
+                set_transient( $transient_key, $api_models, 300 );
+            }
+        }
+    }
+
+    if ( ! empty( $api_models ) && is_array( $api_models ) ) {
+        foreach ( $api_models as $model ) {
+            if ( empty( $model['symbol'] ) ) continue;
+            $slug = strtolower( $model['symbol'] );
+            $asset_type = ( isset( $model['asset_type'] ) && $model['asset_type'] === 'gold' ) ? 'gold' : 'currency';
+
+            $fa_name = isset( $wp_symbols[$slug] ) ? $wp_symbols[$slug]['name'] : ( ! empty( $model['name_fa'] ) ? $model['name_fa'] : $model['name'] );
+            $icon    = ! empty( $model['iconUrl'] ) ? $model['iconUrl'] : '';
+            $price   = isset( $model['price_in_toman'] ) ? floatval( $model['price_in_toman'] ) : 0;
+            $change  = isset( $model['change_24h'] ) ? floatval( $model['change_24h'] ) : 0;
+
+            $symbols[$slug] = [
+                'slug'       => $slug,
+                'name'       => $fa_name,
+                'code'       => strtoupper($slug),
+                'icon'       => $icon,
+                'asset_type' => $asset_type,
+                'price'      => $price,
+                'change'     => $change
+            ];
+        }
+    } else {
+        // Fallback to WP symbols
+        foreach ( $wp_symbols as $slug => $item ) {
+            $asset_type = in_array( $slug, ['geram18', 'sekee', 'sekeb', 'nim', 'rob', 'abshodeh', 'gerami'], true ) ? 'gold' : 'currency';
+            $symbols[$slug] = [
+                'slug'       => $slug,
+                'name'       => $item['name'],
+                'code'       => strtoupper($slug),
+                'icon'       => '',
+                'asset_type' => $asset_type,
+                'price'      => 0,
+                'change'     => 0
+            ];
+        }
+    }
+
     $uid = 'cc_' . uniqid();
+
+    // Helper for rendering icons
+    $get_icon_markup = function( $icon_url, $asset_type, $name ) {
+        if ( ! empty( $icon_url ) ) {
+            $no_radius = ( $asset_type === 'currency' ) ? 'cc-widget__icon--no-radius' : '';
+            return '<img src="' . esc_url( $icon_url ) . '" alt="' . esc_attr( $name ) . '" class="cc-widget__icon ' . $no_radius . '" />';
+        }
+        if ( $asset_type === 'gold' ) {
+            $gid = 'cc_gold_grad_' . uniqid();
+            return '<svg class="cc-widget__icon cc-widget__icon--gold" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="9" fill="url(#' . $gid . ')" stroke="#D97706" stroke-width="1.5"/>
+                <path d="M12 7V17M9 9.5C9 8.5 10.2 7.5 12 7.5C13.8 7.5 15 8.5 15 9.5C15 11 13 11.5 12 12C11 12.5 9 13 9 14.5C9 15.5 10.2 16.5 12 16.5C13.8 16.5 15 15.5 15 14.5" stroke="#92400E" stroke-width="1.5" stroke-linecap="round"/>
+                <defs>
+                    <linearGradient id="' . $gid . '" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+                        <stop stop-color="#FDE047"/>
+                        <stop offset="0.5" stop-color="#EAB308"/>
+                        <stop offset="1" stop-color="#CA8A04"/>
+                    </linearGradient>
+                </defs>
+            </svg>';
+        }
+        return '<svg class="cc-widget__icon cc-widget__icon--no-radius" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="20" height="14" fill="#CBD5E1"/>
+            <circle cx="10" cy="7" r="3" stroke="#475569" stroke-width="1.5"/>
+        </svg>';
+    };
+
     ob_start();
     ?>
     <div class="cc-widget" id="<?php echo esc_attr( $uid ); ?>" dir="rtl">
@@ -93,20 +157,22 @@ function render_currency_calculator( $atts ) {
             <div class="cc-widget__row">
                 <div class="cc-widget__select-wrap">
                     <button type="button" class="cc-widget__select-btn" data-role="from-btn">
-                        <img src="" alt="" class="cc-widget__icon" data-role="from-icon">
-                        <span class="cc-widget__code" data-role="from-code">---</span>
+                        <span class="cc-widget__icon-box" data-role="from-icon-box"></span>
+                        <span class="cc-widget__name" data-role="from-name">---</span>
                         <i class="fas fa-chevron-down cc-widget__chevron"></i>
                     </button>
                     <div class="cc-widget__dropdown" data-role="from-dropdown" hidden>
                         <div class="cc-widget__search-wrap">
                             <input type="text" placeholder="جستجو..." class="cc-widget__search" data-role="from-search">
                         </div>
-                        <ul class="cc-widget__list">
+                        <ul class="cc-widget__list" data-role="from-list">
                             <?php foreach ( $symbols as $sym ) : ?>
                                 <li class="cc-widget__item" data-slug="<?php echo esc_attr( $sym['slug'] ); ?>">
-                                    <img src="<?php echo esc_attr( $sym['icon'] ); ?>" alt="" class="cc-widget__item-icon">
+                                    <span class="cc-widget__item-icon-box">
+                                        <?php echo $get_icon_markup( $sym['icon'], $sym['asset_type'], $sym['name'] ); ?>
+                                    </span>
                                     <span class="cc-widget__item-name"><?php echo esc_html( $sym['name'] ); ?></span>
-                                    <span class="cc-widget__item-code"><?php echo esc_html( $sym['code'] ); ?></span>
+                                    <span class="cc-widget__item-code"><?php echo esc_html( strtoupper($sym['slug']) ); ?></span>
                                 </li>
                             <?php endforeach; ?>
                         </ul>
@@ -128,20 +194,22 @@ function render_currency_calculator( $atts ) {
             <div class="cc-widget__row">
                 <div class="cc-widget__select-wrap">
                     <button type="button" class="cc-widget__select-btn" data-role="to-btn">
-                        <img src="" alt="" class="cc-widget__icon" data-role="to-icon">
-                        <span class="cc-widget__code" data-role="to-code">---</span>
+                        <span class="cc-widget__icon-box" data-role="to-icon-box"></span>
+                        <span class="cc-widget__name" data-role="to-name">---</span>
                         <i class="fas fa-chevron-down cc-widget__chevron"></i>
                     </button>
                     <div class="cc-widget__dropdown" data-role="to-dropdown" hidden>
                         <div class="cc-widget__search-wrap">
                             <input type="text" placeholder="جستجو..." class="cc-widget__search" data-role="to-search">
                         </div>
-                        <ul class="cc-widget__list">
+                        <ul class="cc-widget__list" data-role="to-list">
                             <?php foreach ( $symbols as $sym ) : ?>
                                 <li class="cc-widget__item" data-slug="<?php echo esc_attr( $sym['slug'] ); ?>">
-                                    <img src="<?php echo esc_attr( $sym['icon'] ); ?>" alt="" class="cc-widget__item-icon">
+                                    <span class="cc-widget__item-icon-box">
+                                        <?php echo $get_icon_markup( $sym['icon'], $sym['asset_type'], $sym['name'] ); ?>
+                                    </span>
                                     <span class="cc-widget__item-name"><?php echo esc_html( $sym['name'] ); ?></span>
-                                    <span class="cc-widget__item-code"><?php echo esc_html( $sym['code'] ); ?></span>
+                                    <span class="cc-widget__item-code"><?php echo esc_html( strtoupper($sym['slug']) ); ?></span>
                                 </li>
                             <?php endforeach; ?>
                         </ul>
@@ -241,10 +309,12 @@ function render_currency_calculator( $atts ) {
         position: relative;
         flex-shrink: 0;
         border-left: 1px solid #e2e8f0;
-        padding-left: 16px;
-        margin-left: 16px;
+        padding-left: 12px;
+        margin-left: 12px;
         display: flex;
         align-items: center;
+        width: 160px;
+        box-sizing: border-box;
     }
     .cc-widget__select-btn {
         background: none;
@@ -255,22 +325,55 @@ function render_currency_calculator( $atts ) {
         gap: 8px;
         cursor: pointer;
         font-family: inherit;
-        font-size: 16px;
+        font-size: 14px;
         font-weight: 700;
         color: #1e293b;
-        width: 110px;
-        text-align: right;
+        width: 100%;
+        box-sizing: border-box;
+        padding:10px 5px;
+
+        &:hover , &:focus, &:active {
+            background:#8080802e;
+        }
+    }
+    .cc-widget__icon-box, .cc-widget__item-icon-box {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
     }
     .cc-widget__icon {
-        width: 28px;
-        height: 28px!important;
-        object-fit: contain;
-        border-radius: 50%!important;
+        width: 22px;
+        height: 15px;
+        object-fit: cover;
+        border-radius: 3px;
+        flex-shrink: 0;
+        display: inline-block;
+        vertical-align: middle;
+    }
+    .cc-widget__icon--gold {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+    }
+    .cc-widget__icon--no-radius {
+        border-radius: 0 !important;
+    }
+    .cc-widget__name {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 700;
+        color: #0f172a;
+        text-align: right;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .cc-widget__chevron {
         font-size: 11px;
         color: #64748b;
         margin-right: auto;
+        flex-shrink: 0;
     }
     .cc-widget__input {
         border: none;
@@ -366,12 +469,6 @@ function render_currency_calculator( $atts ) {
     .cc-widget__item:hover {
         background: #f8fafc;
     }
-    .cc-widget__item-icon {
-        width: 24px;
-        height: 24px;
-        object-fit: contain;
-        border-radius: 50%;
-    }
     .cc-widget__item-name {
         font-size: 13px;
         font-weight: 500;
@@ -406,14 +503,6 @@ function render_currency_calculator( $atts ) {
     }
     .cc-widget__promo-btn:hover {
         background: #009c7d;
-    }
-    .cc-widget__promo-badge {
-        background: rgba(255,255,255,0.25);
-        color: #ffffff;
-        font-size: 9px;
-        font-weight: 700;
-        padding: 2px 5px;
-        border-radius: 4px;
     }
     .cc-widget__info-panel {
         background: #ffffff;
@@ -515,6 +604,7 @@ function render_currency_calculator( $atts ) {
         const symbols = <?php echo wp_json_encode( $symbols ); ?>;
         const defaultFrom = <?php echo wp_json_encode( $atts['from'] ); ?>;
         const defaultTo = <?php echo wp_json_encode( $atts['to'] ); ?>;
+        const wpSymbolsMap = <?php echo wp_json_encode( $wp_symbols ); ?> || {};
 
         const widget = document.getElementById(uid);
         
@@ -525,6 +615,8 @@ function render_currency_calculator( $atts ) {
         const toDropdown = widget.querySelector('[data-role="to-dropdown"]');
         const fromSearch = widget.querySelector('[data-role="from-search"]');
         const toSearch = widget.querySelector('[data-role="to-search"]');
+        const fromList = widget.querySelector('[data-role="from-list"]');
+        const toList = widget.querySelector('[data-role="to-list"]');
         const fromInput = widget.querySelector('[data-role="from-input"]');
         const toInput = widget.querySelector('[data-role="to-input"]');
         const swapBtn = widget.querySelector('[data-role="swap-btn"]');
@@ -537,19 +629,131 @@ function render_currency_calculator( $atts ) {
         let state = {
             from: defaultFrom,
             to: defaultTo,
-            prices: { toman: 1, usd: 0 },
-            changes: { toman: 0, usd: 0 },
+            prices: { toman: 1 },
+            changes: { toman: 0 },
             websockets: {}
         };
 
-        // Initialize selectors
+        // Populate initial prices from symbols pre-fetched in PHP
+        Object.keys(symbols).forEach(slug => {
+            if (symbols[slug].price > 0) {
+                state.prices[slug] = symbols[slug].price;
+            }
+            if (typeof symbols[slug].change === 'number') {
+                state.changes[slug] = symbols[slug].change;
+            }
+        });
+
+        function getIconHtml(iconUrl, assetType, name) {
+            if (iconUrl) {
+                var noRadius = (assetType === 'currency') ? ' cc-widget__icon--no-radius' : '';
+                return '<img src="' + iconUrl + '" alt="' + name + '" class="cc-widget__icon' + noRadius + '" />';
+            }
+            if (assetType === 'gold') {
+                return '<svg class="cc-widget__icon cc-widget__icon--gold" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+                    '<circle cx="12" cy="12" r="9" fill="url(#cc-gold-grad-js)" stroke="#D97706" stroke-width="1.5"/>' +
+                    '<path d="M12 7V17M9 9.5C9 8.5 10.2 7.5 12 7.5C13.8 7.5 15 8.5 15 9.5C15 11 13 11.5 12 12C11 12.5 9 13 9 14.5C9 15.5 10.2 16.5 12 16.5C13.8 16.5 15 15.5 15 14.5" stroke="#92400E" stroke-width="1.5" stroke-linecap="round"/>' +
+                    '<defs>' +
+                        '<linearGradient id="cc-gold-grad-js" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">' +
+                            '<stop stop-color="#FDE047"/>' +
+                            '<stop offset="0.5" stop-color="#EAB308"/>' +
+                            '<stop offset="1" stop-color="#CA8A04"/>' +
+                        '</linearGradient>' +
+                    '</defs>' +
+                '</svg>';
+            }
+            return '<svg class="cc-widget__icon cc-widget__icon--no-radius" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+                '<rect width="20" height="14" fill="#CBD5E1"/>' +
+                '<circle cx="10" cy="7" r="3" stroke="#475569" stroke-width="1.5"/>' +
+            '</svg>';
+        }
+
+        function updateButtonUI(role, slug) {
+            const sym = symbols[slug];
+            if (!sym) return;
+
+            widget.querySelector(`[data-role="${role}-icon-box"]`).innerHTML = getIconHtml(sym.icon, sym.asset_type, sym.name);
+            widget.querySelector(`[data-role="${role}-name"]`).textContent = sym.name;
+        }
+
+        // Initialize button UIs
         updateButtonUI('from', state.from);
         updateButtonUI('to', state.to);
 
-        // Open ws for default USD (since we need USD price for converting to dollar values)
+        // Subscribe to websockets
         subscribeToWS('usd');
         subscribeToWS(state.from);
         subscribeToWS(state.to);
+
+        // Fetch live currencies list from API
+        fetch('https://market-pulse.khanes.app/api/v2/currencies?per_page=500')
+            .then(res => res.json())
+            .then(res => {
+                if (res && res.data && Array.isArray(res.data.models)) {
+                    res.data.models.forEach(model => {
+                        if (!model.symbol) return;
+                        const slug = model.symbol.toLowerCase();
+                        const price = parseFloat(model.price_in_toman) || 0;
+                        const change = parseFloat(model.change_24h) || 0;
+
+                        if (price > 0) {
+                            state.prices[slug] = price;
+                        }
+                        state.changes[slug] = change;
+
+                        if (!symbols[slug]) {
+                            const name = wpSymbolsMap[slug]?.name || model.name_fa || model.name || slug;
+                            symbols[slug] = {
+                                slug: slug,
+                                name: name,
+                                code: slug.toUpperCase(),
+                                icon: model.iconUrl || '',
+                                asset_type: model.asset_type === 'gold' ? 'gold' : 'currency',
+                                price: price,
+                                change: change
+                            };
+                            addSymbolToDropdown(symbols[slug]);
+                        } else {
+                            if (model.iconUrl && !symbols[slug].icon) {
+                                symbols[slug].icon = model.iconUrl;
+                            }
+                        }
+                    });
+
+                    updateButtonUI('from', state.from);
+                    updateButtonUI('to', state.to);
+                    recalculate('from');
+                }
+            })
+            .catch(err => console.error('Calculator API fetch error', err));
+
+        function addSymbolToDropdown(sym) {
+            [fromList, toList].forEach(list => {
+                if (!list.querySelector(`li[data-slug="${sym.slug}"]`)) {
+                    const li = document.createElement('li');
+                    li.className = 'cc-widget__item';
+                    li.dataset.slug = sym.slug;
+                    li.innerHTML = `
+                        <span class="cc-widget__item-icon-box">${getIconHtml(sym.icon, sym.asset_type, sym.name)}</span>
+                        <span class="cc-widget__item-name">${sym.name}</span>
+                        <span class="cc-widget__item-code">${sym.code}</span>
+                    `;
+                    bindItemClick(li);
+                    list.appendChild(li);
+                }
+            });
+        }
+
+        function bindItemClick(item) {
+            item.addEventListener('click', () => {
+                const slug = item.dataset.slug;
+                const isFrom = item.closest('[data-role="from-dropdown"]') !== null;
+                changeCurrency(isFrom ? 'from' : 'to', slug);
+            });
+        }
+
+        // Bind existing static items
+        widget.querySelectorAll('.cc-widget__item').forEach(bindItemClick);
 
         // Handle dropdown search
         setupSearch(fromSearch, fromDropdown);
@@ -568,24 +772,11 @@ function render_currency_calculator( $atts ) {
             toDropdown.hidden = !toDropdown.hidden;
         });
 
-        document.addEventListener('click', () => {
-            fromDropdown.hidden = true;
-            toDropdown.hidden = true;
-        });
-
-        // Set select items
-        fromDropdown.querySelectorAll('.cc-widget__item').forEach(item => {
-            item.addEventListener('click', () => {
-                const slug = item.dataset.slug;
-                changeCurrency('from', slug);
-            });
-        });
-
-        toDropdown.querySelectorAll('.cc-widget__item').forEach(item => {
-            item.addEventListener('click', () => {
-                const slug = item.dataset.slug;
-                changeCurrency('to', slug);
-            });
+        document.addEventListener('click', (e) => {
+            if (!widget.contains(e.target)) {
+                fromDropdown.hidden = true;
+                toDropdown.hidden = true;
+            }
         });
 
         // Input changes
@@ -606,7 +797,6 @@ function render_currency_calculator( $atts ) {
             updateButtonUI('from', state.from);
             updateButtonUI('to', state.to);
 
-            const oldVal = parseFloat(fromInput.value) || 0;
             const newVal = parseFloat(toInput.value) || 0;
             fromInput.value = newVal || 1;
             
@@ -626,14 +816,6 @@ function render_currency_calculator( $atts ) {
             recalculate('from');
         }
 
-        function updateButtonUI(role, slug) {
-            const sym = symbols[slug];
-            if (!sym) return;
-
-            widget.querySelector(`[data-role="${role}-icon"]`).src = sym.icon;
-            widget.querySelector(`[data-role="${role}-code"]`).textContent = sym.code;
-        }
-
         function setupSearch(input, dropdown) {
             input.addEventListener('click', (e) => e.stopPropagation());
             input.addEventListener('input', () => {
@@ -648,7 +830,7 @@ function render_currency_calculator( $atts ) {
 
         function subscribeToWS(slug) {
             if (slug === 'toman') return;
-            if (state.websockets[slug]) return; // already subscribed
+            if (state.websockets[slug]) return;
 
             const wsUrl = `wss://market-pulse-ws.khanes.app/ws/currency/price/${slug.toUpperCase()}`;
             const ws = new WebSocket(wsUrl);
@@ -715,6 +897,7 @@ function render_currency_calculator( $atts ) {
 
             const fromSym = symbols[state.from];
             const toSym = symbols[state.to];
+            if (!fromSym || !toSym) return;
             
             let rateStr;
             if (rate > 100) {
@@ -731,7 +914,7 @@ function render_currency_calculator( $atts ) {
 
             const valueInToman = state.prices[state.from] || 0;
             summaryToman.textContent = fmtTomanFriendly(valueInToman);
-            summaryRate.textContent = `${rateStr} ${toSym.code}`;
+            summaryRate.textContent = `${rateStr} ${toSym.name}`;
 
             // Update details table
             updateTableRow('from', state.from);
@@ -740,6 +923,8 @@ function render_currency_calculator( $atts ) {
 
         function updateTableRow(role, slug) {
             const sym = symbols[slug];
+            if (!sym) return;
+
             widget.querySelectorAll(`[data-role="lbl-${role}"]`).forEach(el => el.textContent = sym.name);
 
             const rowUsd = widget.querySelector(`tr[data-row="${role}-usd"]`);

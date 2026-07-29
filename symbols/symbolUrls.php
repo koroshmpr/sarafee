@@ -77,6 +77,15 @@ add_action( 'init', function () {
     );
 }, 20 );
 
+// ── 3b. Rewrite rule for symbol-category taxonomy archives ────────────────
+add_action( 'init', function () {
+    add_rewrite_rule(
+        '^symbol-category/([^/]+)/?$',
+        'index.php?symbol-category=$matches[1]',
+        'top'
+    );
+}, 25 );
+
 // ── 4. Request filter: resolve custom vars to WordPress-native vars ────────
 add_filter( 'request', function ( $qv ) {
 
@@ -181,6 +190,21 @@ add_filter( 'term_link', function ( $url, $term, $taxonomy ) {
         return $url;
     }
     return trailingslashit( home_url( '/' . $term->slug ) );
+}, 10, 3 );
+
+// ── 5b. Fix URL for symbol-category (custom taxonomy) terms ──────────────
+//    By default WP generates /blog/symbol-category/{slug}/ which is wrong.
+//    We override these to point to /{slug}/ — the symbol's single page —
+//    or if there's no matching symbol, at least strip the /blog/ prefix.
+add_filter( 'term_link', function ( $url, $term, $taxonomy ) {
+    if ( $taxonomy !== 'symbol-category' ) {
+        return $url;
+    }
+    // Just strip WordPress's default base and return a clean root-relative URL
+    // e.g. /symbol-category/dollar/ → /symbol-category/dollar/ (clean)
+    // For now keep the slug path but remove the /blog/ prefix WordPress adds
+    $slug = $term->slug;
+    return trailingslashit( home_url( '/symbol-category/' . $slug ) );
 }, 10, 3 );
 
 // ── 7. Correct permalink for symbol single pages ──────────────────────────
@@ -318,9 +342,9 @@ function _sarfee_flush_symbol_rules() {
 
 // ── 11. One-time flush to clear any stale rules from DB ──────────────────
 add_action( 'init', function () {
-    if ( get_option( 'sarfee_symbol_rewrite_v' ) !== '1' ) {
+    if ( get_option( 'sarfee_symbol_rewrite_v' ) !== '2' ) {
         flush_rewrite_rules( false );
-        update_option( 'sarfee_symbol_rewrite_v', '1' );
+        update_option( 'sarfee_symbol_rewrite_v', '2' );
     }
 }, 999 );
 
