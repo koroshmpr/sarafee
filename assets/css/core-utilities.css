@@ -1,0 +1,160 @@
+/**
+ * Sarfee Core Theme Variables, Keyframes & Reusable Utility Classes
+ * Optimized for performance and immediate rendering (no FOUC).
+ */
+
+:root {
+    --scf-primary: #0A1128;
+    --scf-primary-hover: #1a2a50;
+    --scf-secondary: #2563eb;
+    --scf-secondary-hover: #1d4ed8;
+    --scf-accent: #3b82f6;
+    --scf-success: #10b981;
+    --scf-success-bg: #dcfce7;
+    --scf-success-text: #15803d;
+    --scf-danger: #ef4444;
+    --scf-danger-bg: #fee2e2;
+    --scf-danger-text: #b91c1c;
+    --scf-warning: #f59e0b;
+    --scf-warning-bg: #fef3c7;
+    --scf-warning-text: #92400e;
+    --scf-gold: #eab308;
+    --scf-dark: #0f172a;
+    --scf-gray-800: #1e293b;
+    --scf-gray-700: #334155;
+    --scf-gray-600: #475569;
+    --scf-gray-500: #64748b;
+    --scf-gray-400: #94a3b8;
+    --scf-gray-300: #cbd5e1;
+    --scf-gray-200: #e2e8f0;
+    --scf-gray-100: #f1f5f9;
+    --scf-gray-50: #f8fafc;
+    --scf-border: #f1f5f9;
+    --scf-card-bg: #ffffff;
+    --scf-radius-sm: 8px;
+    --scf-radius-md: 12px;
+    --scf-radius-lg: 16px;
+    --scf-radius-xl: 20px;
+    --scf-radius-full: 9999px;
+    --scf-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+    --scf-shadow-md: 0 4px 20px rgba(0, 0, 0, 0.03);
+    --scf-shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+/* ── Common Animations & Keyframes ───────────────────────────────────────── */
+@keyframes scf-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes scf-rotate {
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes scf-dash {
+    0% { stroke-dasharray: 1, 150; stroke-dashoffset: 0; }
+    50% { stroke-dasharray: 90, 150; stroke-dashoffset: -35; }
+    100% { stroke-dasharray: 90, 150; stroke-dashoffset: -124; }
+}
+
+@keyframes scf-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.75); }
+}
+
+@keyframes scf-pulse-up {
+    0% { background-color: rgba(16, 185, 129, 0.25); }
+    100% { background-color: transparent; }
+}
+
+@keyframes scf-pulse-down {
+    0% { background-color: rgba(239, 68, 68, 0.25); }
+    100% { background-color: transparent; }
+}
+
+/* ── Reusable Utility Classes (Tailwind-like & scf-prefixed) ────────────── */
+.flex, .scf-flex { display: flex !important; }
+.inline-flex, .scf-inline-flex { display: inline-flex !important; }
+.flex-col, .scf-flex-col { display: flex !important; flex-direction: column !important; }
+.flex-row, .scf-flex-row { display: flex !important; flex-direction: row !important; }
+.flex-wrap, .scf-flex-wrap { flex-wrap: wrap !important; }
+.flex-nowrap, .scf-flex-nowrap { flex-wrap: nowrap !important; }
+.flex-1, .scf-flex-1 { flex: 1 1 0% !important; }
+.flex-shrink-0, .scf-flex-shrink-0 { flex-shrink: 0 !important; }
+
+.items-center, .scf-items-center { align-items: center !important; }
+.items-start, .scf-items-start { align-items: flex-start !important; }
+.items-end, .scf-items-end { align-items: flex-end !important; }
+
+.justify-between, .scf-justify-between { justify-content: space-between !important; }
+.justify-center, .scf-justify-center { justify-content: center !important; }
+.justify-end, .scf-justify-end { justify-content: flex-end !important; }
+.justify-start, .scf-justify-start { justify-content: flex-start !important; }
+
+.grid, .scf-grid { display: grid !important; }
+.grid-cols-1, .scf-grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+.grid-cols-2, .scf-grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+.gap-1, .scf-gap-1 { gap: 0.25rem !important; }
+.gap-2, .scf-gap-2 { gap: 0.5rem !important; }
+.gap-3, .scf-gap-3 { gap: 0.75rem !important; }
+.gap-4, .scf-gap-4 { gap: 1rem !important; }
+.gap-6, .scf-gap-6 { gap: 1.5rem !important; }
+
+.w-full, .scf-w-full { width: 100% !important; }
+.h-full, .scf-h-full { height: 100% !important; }
+
+.text-center, .scf-text-center { text-align: center !important; }
+.text-right, .scf-text-right { text-align: right !important; }
+.text-left, .scf-text-left { text-align: left !important; }
+
+.rounded-sm, .scf-rounded-sm { border-radius: var(--scf-radius-sm) !important; }
+.rounded-md, .scf-rounded-md { border-radius: var(--scf-radius-md) !important; }
+.rounded-lg, .scf-rounded-lg { border-radius: var(--scf-radius-lg) !important; }
+.rounded-xl, .scf-rounded-xl { border-radius: var(--scf-radius-xl) !important; }
+.rounded-full, .scf-rounded-full { border-radius: var(--scf-radius-full) !important; }
+
+.bg-white, .scf-bg-white { background-color: #ffffff !important; }
+.bg-light, .scf-bg-light { background-color: var(--scf-gray-50) !important; }
+.border, .scf-border { border: 1px solid var(--scf-border) !important; }
+
+/* ── Common Badges ───────────────────────────────────────────────────────── */
+.scf-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    direction: ltr;
+    white-space: nowrap;
+    line-height: 1;
+}
+.scf-badge--up {
+    background: var(--scf-success-bg);
+    color: var(--scf-success-text);
+}
+.scf-badge--down {
+    background: var(--scf-danger-bg);
+    color: var(--scf-danger-text);
+}
+.scf-badge--neutral {
+    background: var(--scf-gray-100);
+    color: var(--scf-gray-500);
+}
+
+/* ── Common Spinner ──────────────────────────────────────────────────────── */
+.scf-spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #ffffff;
+    animation: scf-spin 1s ease-in-out infinite;
+}
+.scf-spinner--blue {
+    border-color: #e2e8f0;
+    border-top-color: #3b82f6;
+}

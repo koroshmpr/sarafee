@@ -55,6 +55,12 @@ add_action( 'init', function () {
         if ( ! $slug ) continue;
         $q = preg_quote( $slug, '/' );
 
+        // /gold/2/ or /gold/page/2/ → symbol single page pagination
+        add_rewrite_rule(
+            '^' . $q . '/(?:page/)?([0-9]+)/?$',
+            'index.php?post_type=symbol&name=' . $slug . '&page=$matches[1]',
+            'top'
+        );
         // /gold/some-article/ → post in symbol category
         add_rewrite_rule(
             '^' . $q . '/([^/]+)/?$',
@@ -118,6 +124,15 @@ add_filter( 'request', function ( $qv ) {
             'no_found_rows'  => true,
         ] );
         if ( empty( $posts ) ) {
+            // If post_slug is numeric (e.g. /gbp/2/), it is pagination for the symbol single page
+            if ( is_numeric( $post_slug ) ) {
+                unset( $qv['sym_cat'], $qv['sym_post'] );
+                $qv['post_type'] = 'symbol';
+                $qv['name']      = $cat_slug;
+                $qv['page']      = intval( $post_slug );
+                return $qv;
+            }
+
             // Post was moved to a different category.
             // If it still exists, 301 to its new canonical URL so old links
             // don't silently serve stale content or leave dead bookmarks.
@@ -342,9 +357,9 @@ function _sarfee_flush_symbol_rules() {
 
 // ── 11. One-time flush to clear any stale rules from DB ──────────────────
 add_action( 'init', function () {
-    if ( get_option( 'sarfee_symbol_rewrite_v' ) !== '2' ) {
+    if ( get_option( 'sarfee_symbol_rewrite_v' ) !== '3' ) {
         flush_rewrite_rules( false );
-        update_option( 'sarfee_symbol_rewrite_v', '2' );
+        update_option( 'sarfee_symbol_rewrite_v', '3' );
     }
 }, 999 );
 
