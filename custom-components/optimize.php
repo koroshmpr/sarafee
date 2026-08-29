@@ -84,3 +84,53 @@ function preload_elementor_critical_scripts() {
         }
     }
 }
+
+// ── SEO Optimizations (Sarafee SEO Brief) ───────────────────────────────────
+
+// 1. 301 Redirect all nested /feed/ URLs to their parent canonical page (Keeps root /feed/ intact)
+add_action( 'template_redirect', 'sarfee_redirect_nested_feeds', 1 );
+function sarfee_redirect_nested_feeds() {
+    if ( is_feed() ) {
+        // If it's the main site RSS feed (e.g. /feed/), leave it 200 OK
+        if ( is_front_page() || is_home() ) {
+            return;
+        }
+
+        // Get the requested URI path
+        $request_uri = $_SERVER['REQUEST_URI'] ?? '';
+        if ( preg_match( '#^(.+?)/feed/?(\?.*)?$#i', $request_uri, $matches ) ) {
+            $parent_path = $matches[1];
+            $query_str   = $matches[2] ?? '';
+            $target_url  = home_url( trailingslashit( ltrim( $parent_path, '/' ) ) ) . $query_str;
+
+            wp_safe_redirect( $target_url, 301 );
+            exit;
+        }
+    }
+}
+
+// 2. Remove nested RSS feed link tags from <head> so search engines stop discovering them
+add_action( 'after_setup_theme', function() {
+    remove_action( 'wp_head', 'feed_links_extra', 3 );
+} );
+
+// 3. Remove dirty query URLs like ?post_type=exchange from Rank Math Sitemap
+add_filter( 'rank_math/sitemap/entry', function( $url, $type, $object ) {
+    if ( isset( $url['loc'] ) && strpos( $url['loc'], '?post_type=' ) !== false ) {
+        return false;
+    }
+    return $url;
+}, 10, 3 );
+
+// 4. Optimize City Taxonomy SEO Titles in Rank Math (London, Manchester, Birmingham)
+add_filter( 'rank_math/frontend/title', function( $title ) {
+    if ( is_tax( 'city' ) ) {
+        $term = get_queried_object();
+        if ( $term && ! is_wp_error( $term ) ) {
+            $city_name = $term->name;
+            // Return high-ranking SEO title pattern
+            return "صرافی {$city_name} | لیست صرافی ایرانی در {$city_name} | Sarafee";
+        }
+    }
+    return $title;
+}, 20 );
