@@ -1,5 +1,9 @@
 <?php
 function my_acf_faq_shortcode( $atts ) {
+    $atts = shortcode_atts( [
+        'title' => 'سوالات متداول',
+    ], $atts );
+
     $queried_object = get_queried_object();
     $is_term = ( $queried_object instanceof WP_Term );
 
@@ -17,50 +21,56 @@ function my_acf_faq_shortcode( $atts ) {
     // Collect all rows first so we can use the data for both the accordion and schema.
     $faqs = [];
     while ( have_rows( 'faqs', $selector ) ) : the_row();
-        $faqs[] = [
-            'question' => get_sub_field( 'question' ),
-            'answer'   => get_sub_field( 'answer' ),
-        ];
+        $q = get_sub_field( 'question' );
+        $a = get_sub_field( 'answer' );
+        if ( ! empty( $q ) && ! empty( $a ) ) {
+            $faqs[] = [
+                'question' => $q,
+                'answer'   => $a,
+            ];
+        }
     endwhile;
 
     if ( empty( $faqs ) ) {
         return '';
     }
 
+    $unique_id = 'scf_faq_' . wp_rand( 100, 999 );
+
     ob_start();
     ?>
-    <div class="elementor-widget-container faq-title">
-        <p class="elementor-heading-title elementor-size-default">سوالات متداول</p>
-    </div>
+    <section class="scf-faq-card" aria-label="<?php echo esc_attr( $atts['title'] ); ?>" dir="rtl">
+        <h2 class="scf-faq-card__title"><?php echo esc_html( $atts['title'] ); ?></h2>
 
-    <div class="elementor-accordion">
-        <?php foreach ( $faqs as $i => $faq ) :
-            $n = $i + 1;
-        ?>
-        <div class="elementor-accordion-item">
-            <div class="elementor-tab-title elementor-clearfix p-2"
-                 data-tab="<?php echo $n; ?>"
-                 role="button"
-                 aria-expanded="false"
-                 tabindex="0"
-                 aria-controls="faq-content-<?php echo $n; ?>">
-                <span class="elementor-accordion-icon elementor-accordion-icon-right" aria-hidden="true">
-                    <span class="elementor-accordion-icon-closed">+</span>
-                    <span class="elementor-accordion-icon-opened" style="display:none;">–</span>
-                </span>
-                <p class="elementor-accordion-title w-max"><?php echo esc_html( $faq['question'] ); ?></p>
+        <div class="scf-faq-list" role="presentation">
+            <?php foreach ( $faqs as $i => $faq ) :
+                $n = $i + 1;
+                $item_content_id = $unique_id . '_content_' . $n;
+            ?>
+            <div class="scf-faq-item">
+                <button type="button"
+                        class="scf-faq-header"
+                        aria-expanded="false"
+                        aria-controls="<?php echo esc_attr( $item_content_id ); ?>">
+                    <span class="scf-faq-question"><?php echo esc_html( $faq['question'] ); ?></span>
+                    <span class="scf-faq-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </span>
+                </button>
+                <div id="<?php echo esc_attr( $item_content_id ); ?>"
+                     class="scf-faq-body"
+                     role="region"
+                     hidden>
+                    <div class="scf-faq-content">
+                        <?php echo wp_kses_post( $faq['answer'] ); ?>
+                    </div>
+                </div>
             </div>
-            <div id="faq-content-<?php echo $n; ?>"
-                 class="elementor-tab-content elementor-clearfix"
-                 data-tab="<?php echo $n; ?>"
-                 role="region"
-                 style="display:none;"
-                 hidden="hidden">
-                <article class="p-1"><?php echo wp_kses_post( $faq['answer'] ); ?></article>
-            </div>
+            <?php endforeach; ?>
         </div>
-        <?php endforeach; ?>
-    </div>
+    </section>
 
     <!-- FAQPage structured data -->
     <?php if ( ! is_tax( 'city' ) && ! is_singular( 'symbol' ) ) : ?>
@@ -85,48 +95,53 @@ function my_acf_faq_shortcode( $atts ) {
     </script>
     <?php endif; ?>
 
+    <?php
+    static $faq_script_printed = false;
+    if ( ! $faq_script_printed ) :
+        $faq_script_printed = true;
+    ?>
     <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        document.querySelectorAll(".elementor-tab-title").forEach(function (tab) {
+    (function () {
+        document.addEventListener("click", function (e) {
+            var header = e.target.closest(".scf-faq-header");
+            if (!header) return;
 
-            const toggleAccordion = function () {
-                const content = tab.nextElementSibling;
-                const isOpen  = content.style.display === "block";
+            var item = header.closest(".scf-faq-item");
+            var card = header.closest(".scf-faq-card");
+            if (!item || !card) return;
 
-                // Close all
-                document.querySelectorAll(".elementor-tab-content").forEach(function (c) {
-                    c.style.display = "none";
-                    c.hidden = true;
-                });
-                document.querySelectorAll(".elementor-tab-title").forEach(function (t) {
-                    t.setAttribute("aria-expanded", "false");
-                    var ic = t.querySelector(".elementor-accordion-icon-closed");
-                    var io = t.querySelector(".elementor-accordion-icon-opened");
-                    if ( ic && io ) { ic.style.display = "inline"; io.style.display = "none"; }
-                });
+            var body = item.querySelector(".scf-faq-body");
+            if (!body) return;
 
-                // Open clicked one
-                if ( ! isOpen ) {
-                    content.style.display = "block";
-                    content.hidden = false;
-                    tab.setAttribute("aria-expanded", "true");
-                    var ic = tab.querySelector(".elementor-accordion-icon-closed");
-                    var io = tab.querySelector(".elementor-accordion-icon-opened");
-                    if ( ic && io ) { ic.style.display = "none"; io.style.display = "inline"; }
-                }
-            };
+            var isExpanded = header.getAttribute("aria-expanded") === "true";
 
-            tab.addEventListener("click", toggleAccordion);
-            tab.addEventListener("keydown", function (e) {
-                if ( e.key === "Enter" || e.key === " " ) {
-                    e.preventDefault();
-                    toggleAccordion();
+            // Close all other items in this FAQ card
+            card.querySelectorAll(".scf-faq-item").forEach(function (otherItem) {
+                if (otherItem !== item) {
+                    var otherHeader = otherItem.querySelector(".scf-faq-header");
+                    var otherBody = otherItem.querySelector(".scf-faq-body");
+                    if (otherHeader) otherHeader.setAttribute("aria-expanded", "false");
+                    if (otherBody) otherBody.hidden = true;
+                    otherItem.classList.remove("is-open");
                 }
             });
+
+            // Toggle clicked item
+            if (isExpanded) {
+                header.setAttribute("aria-expanded", "false");
+                body.hidden = true;
+                item.classList.remove("is-open");
+            } else {
+                header.setAttribute("aria-expanded", "true");
+                body.hidden = false;
+                item.classList.add("is-open");
+            }
         });
-    });
+    })();
     </script>
+    <?php endif; ?>
     <?php
     return ob_get_clean();
 }
 add_shortcode( 'acf_faqs', 'my_acf_faq_shortcode' );
+
