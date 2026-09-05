@@ -72,10 +72,12 @@ require get_stylesheet_directory() . '/gform/city-query.php';
 require get_stylesheet_directory() . '/gform/gravity-forms-style.php';
 // exchanges
 require get_stylesheet_directory() . '/exchanges/exchangeDetails.php';
+require get_stylesheet_directory() . '/exchanges/exchangeLicense.php';
 require get_stylesheet_directory() . '/exchanges/exchangeAbout.php';
 require get_stylesheet_directory() . '/exchanges/exchangeArchive.php';
 require get_stylesheet_directory() . '/exchanges/symbolExchangesList.php';
 require get_stylesheet_directory() . '/exchanges/exchangeUrls.php';
+//require get_stylesheet_directory() . '/exchanges/exchangeGoogleReviews.php';
 // symbols
 require get_stylesheet_directory() . '/symbols/ai_currency_analysis.php';
 require get_stylesheet_directory() . '/symbols/ai_currency_forecast.php';

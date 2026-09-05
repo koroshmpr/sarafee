@@ -27,8 +27,11 @@ function exchange_about_shortcode( $atts ) {
         $post_type = get_post_type( $post_id );
     }
 
+    $empty_fallback = '<style>.about-section, .exchange-about-section, .exchange-about { display: none !important; }</style>' .
+        '<script>(function(){var s=document.currentScript;if(s){var sec=s.closest(".about-section, .exchange-about-section, .elementor-section, .e-con, .e-container, .elementor-widget");if(sec && !sec.textContent.trim()) sec.style.display="none";}})();</script>';
+
     if ( ! $content ) {
-        return '';
+        return $empty_fallback;
     }
 
     // Lock the shortcode from running inside itself

@@ -14,8 +14,11 @@ function my_acf_faq_shortcode( $atts ) {
         $selector = get_the_ID();
     }
 
+    $empty_fallback = '<style>.faq-section, .exchange-faq-section, .scf-faq-card, .faq-container { display: none !important; }</style>' .
+        '<script>(function(){var s=document.currentScript;if(s){var sec=s.closest(".faq-section, .exchange-faq-section, .elementor-section, .e-con, .e-container, .elementor-widget");if(sec && !sec.textContent.trim()) sec.style.display="none";}})();</script>';
+
     if ( ! $selector || ! have_rows( 'faqs', $selector ) ) {
-        return '';
+        return $empty_fallback;
     }
 
     // Collect all rows first so we can use the data for both the accordion and schema.
@@ -32,7 +35,7 @@ function my_acf_faq_shortcode( $atts ) {
     endwhile;
 
     if ( empty( $faqs ) ) {
-        return '';
+        return $empty_fallback;
     }
 
     $unique_id = 'scf_faq_' . wp_rand( 100, 999 );
