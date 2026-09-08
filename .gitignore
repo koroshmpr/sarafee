@@ -11,8 +11,9 @@
 /plugins/*
 !/plugins/sarfee-ai-engine/
 
-# 3. Track this gitignore file
+# 3. Track repository metadata files
 !.gitignore
+!README.md
 
 # 4. OS and IDE clutter
 .DS_Store
