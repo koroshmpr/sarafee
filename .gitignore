@@ -1,0 +1,19 @@
+# Ignore all files and directories in wp-content by default
+/*
+
+# 1. Track themes directory and ONLY astra-child
+!/themes/
+/themes/*
+!/themes/astra-child/
+
+# 2. Track plugins directory and ONLY sarfee-ai-engine
+!/plugins/
+/plugins/*
+!/plugins/sarfee-ai-engine/
+
+# 3. Track this gitignore file
+!.gitignore
+
+# 4. OS and IDE clutter
+.DS_Store
+*.log
