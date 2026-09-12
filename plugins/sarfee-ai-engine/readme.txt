@@ -1,4 +1,4 @@
-=== Sarfee AI Engine (GEO & AEO) ===
+=== Sarfee GEO & AI Search Optimizer ===
 Contributors: sarfee
 Tags: seo, geo, aeo, ai, llms.txt, schema, indexnow, perplexity, chatgpt
 Requires at least: 5.8
@@ -6,11 +6,11 @@ Tested up to: 6.7
 Stable tag: 1.0.0
 License: GPLv2 or later
 
-افزونه اختصاصی بهینه‌سازی سایت صرفی برای موتورهای جستجوی هوش مصنوعی (Generative Engine Optimization).
+افزونه اختصاصی سئوی هوش مصنوعی (GEO & AEO) و ایندکس آنی تغییرات سایت صرفی.
 
 == Description ==
 
-پلاگین **Sarfee AI Engine** به طور ویژه برای نیازهای سایت «صرفی» و آماده‌سازی داده‌های صرافی‌ها، ارزها و مقالات برای موتورهای پاسخ‌گوی هوش مصنوعی (مانند Perplexity, ChatGPT Search, Claude, Google Gemini) توسعه یافته است.
+پلاگین **Sarfee GEO & AI Search Optimizer** به طور ویژه برای نیازهای سایت «صرفی» و آماده‌سازی داده‌های صرافی‌ها، ارزها و مقالات برای موتورهای پاسخ‌گوی هوش مصنوعی (مانند Perplexity, ChatGPT Search, Claude, Google Gemini) توسعه یافته است.
 
 === امکانات کلیدی ===
 1. **پروتکل جهانی llms.txt و llms-full.txt**:
@@ -18,10 +18,11 @@ License: GPLv2 or later
    - سیستم کش خودکار ۱۲ ساعته با Transient API برای حفظ بالاترین سرعت لود.
    - تزریق متاتگ `<link rel="alternate" type="text/markdown">` در هدر تمام صفحات.
 
-2. **مدیریت ربات‌های AI و ai.txt**:
+2. **مدیریت ربات‌های AI و متاتگ‌های استناد (ai.txt & Citation Meta Tags)**:
    - ارائه فایل `/ai.txt` با مجوزهای استاندارد استناد (Attribution) و استنتاج.
    - بهینه‌سازی دسترسی کراولرهای GPTBot, PerplexityBot, ClaudeBot, Google-Extended در robots.txt.
-   - تنظیم هدرهای X-Robots-Tag برای دریافت حداکثر اسنیپت و استناد در AI Overviews.
+   - تزریق خودکار متاتگ‌های استناد علمی/خبری (`citation_title`, `citation_publisher`, `citation_author`, `citation_publication_date` و ...) در صفحات مقالات و صرافی‌ها جهت تضمین درج نام و لینک منبع در پاسخ‌های هوش مصنوعی (Citation-Friendly).
+   - تنظیم هدرهای X-Robots-Tag برای دریافت حداکثر اسنیپت و پیش‌نمایش در AI Overviews.
 
 3. **گراف دانش و اسکیمای اختصاصی صرافی‌ها (JSON-LD)**:
    - تولید خودکار اسکیمای استاندارد `FinancialService` و `ExchangeOffice` برای صفحات تکی صرافی‌ها.

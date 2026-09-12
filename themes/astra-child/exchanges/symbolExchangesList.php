@@ -115,7 +115,7 @@ function render_symbol_exchanges_list( $atts ) {
         </div>
 
         <!-- List of exchanges -->
-        <ul class="ea__list" itemscope itemtype="https://schema.org/ItemList">
+        <ul class="ea__list">
             <?php
             $counter = 0;
             foreach ( $exchange_data as $data ) :
@@ -123,11 +123,7 @@ function render_symbol_exchanges_list( $atts ) {
                 $rank    = get_field( 'rank', $data['post']->ID ) ?: $counter;
                 $is_top3 = $rank <= 3;
             ?>
-                <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem" class="ea__item" data-cities="<?php echo esc_attr( implode( ' ', $data['city_slugs'] ) ); ?>">
-                    <meta itemprop="position" content="<?php echo esc_attr( $counter ); ?>" />
-                    <meta itemprop="name" content="<?php echo esc_attr( get_the_title( $data['post']->ID ) ); ?>" />
-                    <meta itemprop="url" content="<?php echo esc_url( get_permalink( $data['post']->ID ) ); ?>" />
-                    
+                <li class="ea__item" data-cities="<?php echo esc_attr( implode( ' ', $data['city_slugs'] ) ); ?>">
                     <a class="ea__item-link" href="<?php echo esc_url( get_permalink( $data['post']->ID ) ); ?>" tabindex="-1" aria-label="<?php echo esc_attr( get_the_title( $data['post']->ID ) ); ?>"></a>
 
                     <div class="ea__item-left">

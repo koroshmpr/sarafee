@@ -115,14 +115,33 @@ function ncc_runtime_js() {
                 if ( ! rows.length ) {
                     priceEl.textContent = '---';
                     pctEl.textContent   = '-';
-                    series.setData( [] );
+                    try { series.setData( [] ); } catch ( e ) {}
                     return;
                 }
 
-                series.setData( rows.map( function ( r ) {
-                    return { time: r.timestamp, value: r.close };
-                } ) );
-                chart.timeScale().fitContent();
+                // Guarantee strictly ascending unique points for LightweightCharts
+                var seriesData = [];
+                var prevT = 0;
+                for ( var k = 0; k < rows.length; k++ ) {
+                    var r = rows[ k ];
+                    var t = Math.round( Number( r.timestamp ) );
+                    var v = Number( r.close );
+                    if ( ! isNaN( t ) && ! isNaN( v ) && isFinite( v ) && t > prevT ) {
+                        seriesData.push( { time: t, value: v } );
+                        prevT = t;
+                    }
+                }
+
+                if ( seriesData.length >= 2 ) {
+                    try {
+                        series.setData( seriesData );
+                        chart.timeScale().fitContent();
+                    } catch ( err ) {
+                        console.error( 'LightweightCharts setData error:', err );
+                    }
+                } else {
+                    try { series.setData( [] ); } catch ( e ) {}
+                }
 
                 var first = rows[ 0 ].open || rows[ 0 ].close;
                 var last  = rows[ rows.length - 1 ].close;
@@ -135,7 +154,7 @@ function ncc_runtime_js() {
 
             chart.subscribeCrosshairMove( function ( param ) {
                 var priceData = param.time && param.seriesData ? param.seriesData.get( series ) : null;
-                if ( ! param.point || ! priceData ) {
+                if ( ! param.point || ! priceData || priceData.value == null || isNaN( priceData.value ) ) {
                     tooltipEl.hidden = true;
                     return;
                 }
@@ -162,9 +181,44 @@ function ncc_runtime_js() {
             fetch( API + slug )
                 .then( function ( r ) { return r.json(); } )
                 .then( function ( res ) {
-                    var rows = ( res && res.data && Array.isArray( res.data.history ) ) ? res.data.history.slice() : [];
-                    rows.sort( function ( a, b ) { return a.timestamp - b.timestamp; } );
-                    fullHistory = rows;
+                    var rawRows = ( res && res.data && Array.isArray( res.data.history ) ) ? res.data.history : [];
+
+                    // 1. Sanitize, parse, and filter valid points
+                    var validRows = [];
+                    for ( var i = 0; i < rawRows.length; i++ ) {
+                        var item = rawRows[ i ];
+                        if ( ! item ) continue;
+                        var t = Number( item.timestamp );
+                        var c = Number( item.close );
+                        if ( isNaN( t ) || t <= 0 || isNaN( c ) || ! isFinite( c ) || c <= 0 ) continue;
+
+                        validRows.push( {
+                            timestamp: Math.round( t ),
+                            open: Number( item.open ) || c,
+                            high: Number( item.high ) || c,
+                            low: Number( item.low ) || c,
+                            close: c,
+                        } );
+                    }
+
+                    // 2. Sort strictly ascending by timestamp
+                    validRows.sort( function ( a, b ) { return a.timestamp - b.timestamp; } );
+
+                    // 3. Deduplicate timestamps (LightweightCharts throws 'Value is null' if duplicate timestamps exist)
+                    var deduplicatedRows = [];
+                    var lastTime = null;
+                    for ( var j = 0; j < validRows.length; j++ ) {
+                        var curr = validRows[ j ];
+                        if ( curr.timestamp === lastTime ) {
+                            // Replace with latest bar data for that same timestamp
+                            deduplicatedRows[ deduplicatedRows.length - 1 ] = curr;
+                        } else {
+                            deduplicatedRows.push( curr );
+                            lastTime = curr.timestamp;
+                        }
+                    }
+
+                    fullHistory = deduplicatedRows;
                     loaderEl.hidden = true;
                     var activeBtn = card.querySelector( '.ncc__period--active' );
                     renderPeriod( activeBtn ? activeBtn.dataset.period : '1m' );
@@ -214,9 +268,12 @@ function render_custom_currency_card( $atts ) {
             $fa_name = get_field( 'fa_name', $symbol_post->ID );
         }
         if ( empty( $fa_name ) ) {
+            $fa_name = get_post_meta( $symbol_post->ID, 'fa_name', true );
+        }
+        if ( empty( $fa_name ) ) {
             $raw_title = $symbol_post->post_title;
-            $parts = preg_split( '/[|:|–|-]/', $raw_title );
-            $fa_name = trim( $parts[0] );
+            $parts = preg_split( '/[\-|–—|:]/u', (string) $raw_title );
+            $fa_name = trim( $parts[0] ?? (string) $raw_title );
             if ( mb_strpos( $fa_name, 'قیمت ' ) === 0 ) {
                 $fa_name = trim( mb_substr( $fa_name, 5 ) );
             }

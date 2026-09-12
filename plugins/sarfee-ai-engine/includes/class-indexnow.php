@@ -139,14 +139,49 @@ class Sarfee_AI_IndexNow {
             $display_msg = 'کد ' . $status . ': ' . ( $raw_msg ?: 'خطای ناشناخته' );
         }
 
-        // Log the activity (keep last 20)
+        // Log the activity (keep last 100)
         $this->log_activity( $urls, $status, $display_msg );
 
         return [
             'success' => $is_success,
             'status'  => $status,
             'message' => $display_msg,
+            'count'   => count( $urls ),
         ];
+    }
+
+    /**
+     * Submits all published exchanges, symbols, posts, and pages to IndexNow in bulk
+     */
+    public function bulk_submit_all_urls(): array {
+        $urls = [ home_url( '/' ) ];
+
+        $post_types = [ 'exchange', 'symbol', 'post', 'page' ];
+        foreach ( $post_types as $pt ) {
+            $posts = get_posts( [
+                'post_type'      => $pt,
+                'post_status'    => 'publish',
+                'posts_per_page' => 150, // High limit to cover all key entities
+                'fields'         => 'ids',
+            ] );
+
+            foreach ( $posts as $pid ) {
+                $permalink = get_permalink( $pid );
+                if ( ! empty( $permalink ) ) {
+                    $urls[] = $permalink;
+                }
+            }
+        }
+
+        $urls = array_values( array_unique( $urls ) );
+        return $this->ping_urls( $urls );
+    }
+
+    /**
+     * Clears IndexNow logs
+     */
+    public function clear_logs(): void {
+        delete_option( 'sarfee_ai_indexnow_log' );
     }
 
     private function log_activity( array $urls, int $status, string $message ): void {
@@ -162,7 +197,7 @@ class Sarfee_AI_IndexNow {
             'message' => $message,
         ] );
 
-        $logs = array_slice( $logs, 0, 20 );
-        update_option( 'sarfee_ai_indexnow_log', $logs );
+        $logs = array_slice( $logs, 0, 100 );
+        update_option( 'sarfee_ai_indexnow_log', $logs, false );
     }
 }

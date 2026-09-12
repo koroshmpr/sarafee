@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Sarfee AI Engine (GEO & AEO)
- * Plugin URI: https://sarfee.ir
- * Description: پلاگین جامع و سبک بهینه‌سازی سایت صرفی برای موتورهای هوش مصنوعی (Perplexity, ChatGPT, Claude, Gemini)، شامل تولید استاندارد llms.txt، مدیریت ai.txt، اسکیمای ساختاریافته صرافی‌ها و ارسال بلادرنگ تغییرات با IndexNow.
+ * Plugin Name: Sarfee GEO & AI Search Optimizer (سئوی هوش مصنوعی و ایندکس آنی)
+ * Plugin URI: https://sarafee.uk
+ * Description: بهینه‌سازی تخصصی سایت صرفی برای موتورهای جستجوی هوش مصنوعی (ChatGPT, Perplexity, Claude, Gemini) با استانداردهای GEO و AEO، تولید خودکار llms.txt، مانیتورینگ خزنده‌ها و ارسال بلادرنگ با IndexNow.
  * Version: 1.0.0
  * Author: Sarfee Development Team
  * Text Domain: sarfee-ai

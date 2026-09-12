@@ -23,25 +23,49 @@ function sarfee_symbol_single_schema() {
     $site_url  = esc_url( home_url( '/' ) );
     $site_host = rtrim( $site_url, '/' );
 
-    // Get fa_name or clean title fallback
+    // Get fa_name with robust layered fallbacks (ACF -> post_meta -> clean title -> raw post_title -> slug)
     $fa_name = '';
     if ( function_exists( 'get_field' ) ) {
-        $fa_name = get_field( 'fa_name', $post->ID );
+        $fa_name = trim( (string) get_field( 'fa_name', $post->ID ) );
     }
     if ( empty( $fa_name ) ) {
-        $raw_title = $post->post_title;
-        $parts = preg_split( '/[|:|–|-]/', $raw_title );
-        $fa_name = trim( $parts[0] );
-        if ( mb_strpos( $fa_name, 'قیمت ' ) === 0 ) {
-            $fa_name = trim( mb_substr( $fa_name, 5 ) );
+        $fa_name = trim( (string) get_post_meta( $post->ID, 'fa_name', true ) );
+    }
+    if ( empty( $fa_name ) ) {
+        $raw_title = (string) $post->post_title;
+        $parts     = preg_split( '/[\-|–—|:]/u', $raw_title );
+        $clean     = trim( $parts[0] ?? $raw_title );
+        if ( mb_strpos( $clean, 'قیمت ' ) === 0 ) {
+            $clean = trim( mb_substr( $clean, 5 ) );
         }
-        if ( mb_substr( $fa_name, -6 ) === ' امروز' ) {
-            $fa_name = trim( mb_substr( $fa_name, 0, -6 ) );
+        if ( mb_substr( $clean, -6 ) === ' امروز' ) {
+            $clean = trim( mb_substr( $clean, 0, -6 ) );
         }
+        $fa_name = ! empty( $clean ) ? $clean : ( ! empty( $raw_title ) ? $raw_title : strtoupper( $slug ) );
     }
 
-    // Dynamic description builder
-    $description = sprintf( 'مشاهده قیمت لحظه ای %s، چارت تغییرات، تحلیل بازار و استفاده از ماشین حساب تبدیل %s به تومان. مقایسه نرخ بهترین صرافیهای بریتانیا در Sarafee.uk.', $fa_name, $fa_name );
+    if ( empty( $fa_name ) ) {
+        $fa_name = strtoupper( $slug ?: 'سیمبل ' . $post->ID );
+    }
+
+    // Build clean schema name (using fa_name and ticker code if applicable)
+    $ticker     = ( strlen( $slug ) <= 5 && ctype_alpha( $slug ) ) ? strtoupper( $slug ) : '';
+    $has_prefix = preg_match( '/(قیمت|تحلیل|نرخ|حباب|حواله)/u', $fa_name );
+    $prefix     = $has_prefix ? '' : 'قیمت و تحلیل ';
+    $schema_name = ( $ticker && stripos( $fa_name, $ticker ) === false ) ? "{$prefix}{$fa_name} ({$ticker})" : "{$prefix}{$fa_name}";
+
+    // Description: Check Rank Math / SEO custom meta first, fallback to dynamic
+    $custom_desc = get_post_meta( $post->ID, 'rank_math_description', true ) ?: $post->post_excerpt;
+    if ( empty( $custom_desc ) ) {
+        $custom_desc = get_post_meta( $post->ID, '_yoast_wpseo_metadesc', true );
+    }
+    if ( empty( $custom_desc ) && function_exists( 'get_field' ) ) {
+        $custom_desc = get_field( 'description', $post->ID ) ?: get_field( 'meta_description', $post->ID );
+    }
+    if ( empty( $custom_desc ) ) {
+        $custom_desc = get_post_meta( $post->ID, 'description', true ) ?: get_post_meta( $post->ID, 'meta_description', true );
+    }
+    $description = ! empty( trim( (string) $custom_desc ) ) ? trim( (string) $custom_desc ) : sprintf( 'مشاهده قیمت لحظه ای %s، چارت تغییرات، تحلیل بازار و استفاده از ماشین حساب تبدیل %s به تومان. مقایسه نرخ بهترین صرافیهای بریتانیا در Sarafee.uk.', $fa_name, $fa_name );
 
     // Get FAQs from ACF if they exist
     $faqs_data = [];
@@ -93,7 +117,7 @@ function sarfee_symbol_single_schema() {
                 '@type'      => 'WebPage',
                 '@id'        => $post_link . '#webpage',
                 'url'        => $post_link,
-                'name'       => $post_title,
+                'name'       => $schema_name,
                 'description'=> $description,
                 'inLanguage' => 'fa-IR',
                 'isPartOf'   => [
