@@ -11,6 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Sarfee_AI_Bots {
 
     public function __construct() {
+        add_action( 'init', [ $this, 'handle_ai_txt_request' ], 1 );
         add_action( 'template_redirect', [ $this, 'handle_ai_txt_request' ] );
         add_filter( 'robots_txt', [ $this, 'filter_robots_txt' ], 100, 2 );
         add_action( 'send_headers', [ $this, 'inject_ai_response_headers' ] );
@@ -26,7 +27,7 @@ class Sarfee_AI_Bots {
             return;
         }
 
-        $path = trim( parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH ), '/' );
+        $path = trim( (string) parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH ), '/' );
         if ( $path !== 'ai.txt' ) {
             return;
         }
@@ -36,9 +37,22 @@ class Sarfee_AI_Bots {
             return;
         }
 
+        // Guarantee HTTP 200 status code (prevent WP 404)
+        if ( function_exists( 'status_header' ) ) {
+            status_header( 200 );
+        }
+        if ( function_exists( 'http_response_code' ) ) {
+            http_response_code( 200 );
+        }
+
+        while ( ob_get_level() > 0 ) {
+            @ob_end_clean();
+        }
+
         header( 'Content-Type: text/plain; charset=utf-8' );
         header( 'X-Robots-Tag: all' );
         header( 'Cache-Control: public, max-age=86400' );
+        header( 'X-Content-Type-Options: nosniff' );
 
         echo $this->build_ai_txt_content();
         exit;

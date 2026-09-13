@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Sarfee_AI_IndexNow {
 
     public function __construct() {
+        add_action( 'init', [ $this, 'handle_key_file_request' ], 1 );
         add_action( 'template_redirect', [ $this, 'handle_key_file_request' ] );
         add_action( 'save_post', [ $this, 'on_save_post' ], 20, 2 );
     }
@@ -36,7 +37,7 @@ class Sarfee_AI_IndexNow {
     }
 
     /**
-     * Ensures an IndexNow API Key exists
+     * Ensures an IndexNow API Key exists and creates physical file in root
      */
     public function ensure_api_key(): string {
         $key = get_option( 'sarfee_ai_indexnow_key' );
@@ -44,11 +45,70 @@ class Sarfee_AI_IndexNow {
             $key = bin2hex( random_bytes( 16 ) ); // 32 hex chars
             update_option( 'sarfee_ai_indexnow_key', $key );
         }
+        $this->ensure_key_file( $key );
         return $key;
     }
 
     /**
-     * Responds to /{key}.txt verification request
+     * Regenerates a fresh IndexNow API Key, cleans old file, and creates new physical file
+     */
+    public function regenerate_api_key(): string {
+        $old_key = get_option( 'sarfee_ai_indexnow_key' );
+        if ( ! empty( $old_key ) ) {
+            $root_path = defined( 'ABSPATH' ) ? ABSPATH : ( dirname( dirname( dirname( dirname( __FILE__ ) ) ) ) . '/' );
+            $old_file  = rtrim( $root_path, '/\\' ) . '/' . sanitize_file_name( $old_key ) . '.txt';
+            if ( file_exists( $old_file ) ) {
+                @unlink( $old_file );
+            }
+        }
+
+        $new_key = bin2hex( random_bytes( 16 ) );
+        update_option( 'sarfee_ai_indexnow_key', $new_key );
+        $this->ensure_key_file( $new_key );
+        return $new_key;
+    }
+
+    /**
+     * Ensures physical /{key}.txt file exists in ABSPATH root for direct web server serving (LiteSpeed/Nginx)
+     */
+    public function ensure_key_file( ?string $key = null ): bool {
+        if ( empty( $key ) ) {
+            $key = get_option( 'sarfee_ai_indexnow_key' );
+        }
+        if ( empty( $key ) || ! is_string( $key ) ) {
+            return false;
+        }
+
+        $clean_key = sanitize_file_name( trim( $key ) );
+        if ( empty( $clean_key ) ) {
+            return false;
+        }
+
+        $root_path = defined( 'ABSPATH' ) ? ABSPATH : ( dirname( dirname( dirname( dirname( __FILE__ ) ) ) ) . '/' );
+        $file_path = rtrim( $root_path, '/\\' ) . '/' . $clean_key . '.txt';
+
+        // Check if file already exists with exact content
+        if ( file_exists( $file_path ) ) {
+            $existing = @file_get_contents( $file_path );
+            if ( false !== $existing && trim( $existing ) === $clean_key ) {
+                return true;
+            }
+        }
+
+        // Try writing the file
+        if ( is_writable( dirname( $file_path ) ) || ( file_exists( $file_path ) && is_writable( $file_path ) ) ) {
+            $written = @file_put_contents( $file_path, $clean_key, LOCK_EX );
+            if ( false !== $written ) {
+                @chmod( $file_path, 0644 );
+                return true;
+            }
+        }
+
+        return file_exists( $file_path );
+    }
+
+    /**
+     * Responds to /{key}.txt verification request with guaranteed HTTP 200 and clean text
      */
     public function handle_key_file_request(): void {
         if ( ! isset( $_SERVER['REQUEST_URI'] ) ) {
@@ -56,12 +116,28 @@ class Sarfee_AI_IndexNow {
         }
 
         $key = $this->ensure_api_key();
-        $path = trim( parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH ), '/' );
+        $path = trim( (string) parse_url( $_SERVER['REQUEST_URI'], PHP_URL_PATH ), '/' );
 
         if ( $path === $key . '.txt' ) {
+            // Guarantee HTTP 200 status code (prevent WP 404)
+            if ( function_exists( 'status_header' ) ) {
+                status_header( 200 );
+            }
+            if ( function_exists( 'http_response_code' ) ) {
+                http_response_code( 200 );
+            }
+
+            // Clear any previous output buffers to avoid accidental whitespace/BOM
+            while ( ob_get_level() > 0 ) {
+                @ob_end_clean();
+            }
+
             header( 'Content-Type: text/plain; charset=utf-8' );
             header( 'X-Robots-Tag: noindex, nofollow' );
-            echo $key;
+            header( 'Cache-Control: public, max-age=86400' );
+            header( 'X-Content-Type-Options: nosniff' );
+
+            echo trim( $key );
             exit;
         }
     }
@@ -128,13 +204,17 @@ class Sarfee_AI_IndexNow {
         // IndexNow returns 200 (OK) or 202 (Accepted)
         $is_success = in_array( $status, [ 200, 202 ], true );
 
-        // Human-friendly message, especially for local environments
-        if ( $is_success ) {
-            $display_msg = 'موفقیت‌آمیز (تغییرات به موتورهای جستجو مخابره شد)';
+        // Human-friendly message, especially for local environments & 403 verification issues
+        if ( $status === 200 ) {
+            $display_msg = 'موفقیت‌آمیز (کد ۲۰۰ - آدرس‌ها بلافاصله توسط موتورهای جستجو پردازش شدند)';
+        } elseif ( $status === 202 ) {
+            $display_msg = 'در صف پردازش (کد ۲۰۲ - کلید در حال اعتبارسنجی توسط ربات مایکروسافت)';
+        } elseif ( $status === 403 ) {
+            $display_msg = 'عدم احراز هویت کلید (کد ۴۰۳ Forbidden): کلید قبلی به دلیل خطای قبلی در سرور مایکروسافت مسدود شده است. لطفاً روی دکمه «🔄 تولید کلید تازه» کلیک کنید تا یک کلید جدید ساخته شده و اعتبار سنجی موفق شود.';
         } elseif ( $status === 429 && $is_local ) {
             $display_msg = 'محیط لوکال (TooManyRequests): سرورهای مایکروسافت دامنه‌های localhost را ایندکس نمی‌کنند. روی هاست اصلی با دامنه واقعی کد ۲۰۰ ثبت خواهد شد.';
         } elseif ( $status === 422 ) {
-            $display_msg = 'خطای اعتبارسنجی دامنه یا کلید (در لوکال طبیعی است).';
+            $display_msg = 'خطای اعتبارسنجی دامنه یا کلید (۴۲۲ Unprocessable Entity): آدرس‌های ارسالی با هاست مطابقت ندارند.';
         } else {
             $display_msg = 'کد ' . $status . ': ' . ( $raw_msg ?: 'خطای ناشناخته' );
         }

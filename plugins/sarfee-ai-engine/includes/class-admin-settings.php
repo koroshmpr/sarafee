@@ -137,6 +137,12 @@ class Sarfee_AI_Admin {
             add_settings_error( 'sarfee_ai', 'indexnow_cleared', 'تاریخچه گزارش‌های IndexNow با موفقیت پاکسازی شد.', 'updated' );
         }
 
+        // Action: Regenerate IndexNow Key
+        if ( isset( $_POST['sarfee_ai_regenerate_indexnow_key'] ) && check_admin_referer( 'sarfee_ai_regenerate_indexnow_action', 'sarfee_ai_regenerate_indexnow_nonce' ) ) {
+            $new_key = $this->engine->indexnow->regenerate_api_key();
+            add_settings_error( 'sarfee_ai', 'indexnow_regenerated', sprintf( 'کلید تازه با موفقیت ساخته شد و فایل فیزیکی در روت هاست مستقر گردید (%s). اکنون می‌توانید ارسال دسته‌جمعی را اجرا فرمایید.', esc_html( $new_key ) ), 'updated' );
+        }
+
         // Action: Export IndexNow Logs as CSV
         if ( isset( $_GET['action'] ) && $_GET['action'] === 'sarfee_ai_export_indexnow_csv' && check_admin_referer( 'sarfee_ai_export_indexnow_action', 'nonce' ) ) {
             $logs = get_option( 'sarfee_ai_indexnow_log', [] );
@@ -1262,6 +1268,34 @@ class Sarfee_AI_Admin {
                                     </button>
                                 </form>
                             <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <?php
+                    $is_file_on_disk = defined( 'ABSPATH' ) && file_exists( ABSPATH . $indexnow_key . '.txt' );
+                    ?>
+                    <!-- Key File Status Bar -->
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 18px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; font-size:13px;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span style="font-weight:600; color:#334155;">وضعیت کلید اعتبارسنجی:</span>
+                            <code style="background:#ffffff; border:1px solid #cbd5e1; padding:2px 8px; border-radius:6px; font-weight:700; color:#0f172a;"><?php echo esc_html( $indexnow_key ); ?></code>
+                            <?php if ( $is_file_on_disk ) : ?>
+                                <span style="background:#dcfce7; color:#15803d; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:700;">فایل فیزیکی در روت هاست: فعال ✅</span>
+                            <?php else : ?>
+                                <span style="background:#dbeafe; color:#1e40af; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:700;">پاسخ خودکار وردپرس (HTTP 200) ⚡</span>
+                            <?php endif; ?>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <form method="post" action="" style="display:inline;">
+                                <?php wp_nonce_field( 'sarfee_ai_regenerate_indexnow_action', 'sarfee_ai_regenerate_indexnow_nonce' ); ?>
+                                <button type="submit" name="sarfee_ai_regenerate_indexnow_key" class="sarfee-btn sarfee-btn-secondary sarfee-btn-sm" onclick="return confirm('تولید کلید تازه، کلید مسدودشده قبلی را در مایکروسافت باطل کرده و یک کلید جدید در روت هاست می‌سازد. آیا مایل به ادامه هستید؟');" style="color:#b45309; border-color:#fde68a;">
+                                    <span>🔄</span>
+                                    <span>تولید کلید تازه (رفع خطای ۴۰۳)</span>
+                                </button>
+                            </form>
+                            <a href="<?php echo esc_url( $key_url ); ?>" target="_blank" class="sarfee-btn sarfee-btn-secondary sarfee-btn-sm">
+                                <span>بررسی آنلاین فایل کلید</span> <span>↗</span>
+                            </a>
                         </div>
                     </div>
 
